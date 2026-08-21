@@ -78,7 +78,8 @@ GlassesReader 是一款基于 Kotlin 与 Jetpack Compose 构建的 Android 工�
 
 ### 主要依赖
 
-- [Rokid CXR-M SDK](https://developer.rokid.com/)：智能眼镜连接与自定义页面管理
+- [Rokid CXR-M SDK](https://developer.rokid.com/)（当前线上）：`com.rokid.cxr:client-m`，本 App 直连蓝牙 + CustomView
+- [Rokid CXR-L SDK](./sdk/CXR%20L%20SDK/)（升级目标，文档已入库）：`com.rokid.cxr:client-l:1.0.4`，经官方 App 鉴权建链
 - [EasyFloat](https://github.com/princekin-f/EasyFloat)：悬浮窗管理
 - Jetpack Compose：声明式 UI 框架
 - Retrofit + OkHttp：网络请求（用于未来功能扩展）
@@ -190,7 +191,7 @@ cd GlassesReader
 
 ## ⚠️ 已知限制与注意事项
 
-### 蓝牙连接限制
+### 蓝牙连接限制（当前 CXR-M）
 - **独占连接**：Rokid 眼镜在同一时间只能与一个应用建立 SDK 连接。如果官方应用已连接，需要先断开其配对，再由本应用发起连接。
 - **连接超时**：如果 `initBluetooth()` 在 10 秒内未收到回调，会判定为连接超时。可能原因：
   1. 设备已被其他应用占用
@@ -202,18 +203,63 @@ cd GlassesReader
 - 文本采集依赖目标应用的无障碍节点，若页面采用 Canvas 自绘等方案可能无法完整捕获
 - 眼镜端自定义页面依赖蓝牙连接，如连接断开将退回占位文本
 
-### 使用建议
+### 使用建议（当前 CXR-M）
 - 连接前确保官方应用已断开蓝牙配对
 - 如果连接失败，尝试将眼镜进入配对模式后重新扫描连接
 - 建议在连接成功后，先测试文本采集功能是否正常
 
+## 🔄 SDK 升级说明（CXR-M → CXR-L）
+
+### 版本与分支策略
+
+| 项 | 说明 |
+| --- | --- |
+| **1.x（冻结）** | `main` 停留在 **v1.2.2**（CXR-M 直连）。**暂不维护**新功能；GitHub Release 仍可供下载 |
+| **2.x（开发中）** | 分支 **`v2/cxr-l`**：升级 CXR-L、后续 2.x 功能均在此开发 |
+| **当前包版本** | `versionName` = `2.0.0-dev`，`versionCode` = `20`（仅开发/内测；正式首发拟为 `2.0.0`） |
+| **versionCode** | 自 20 起每次对外 APK +1；正式 `2.0.0` 及之后按语义化版本递增 `versionName` |
+
+稳定后计划将 `v2/cxr-l` 合回 `main` 并打 tag `v2.0.0`；此后默认只维护 2.x。
+
+当前代码运行时仍基于 **CXR-M**；分支上已入库 CXR-L 文档与差异说明，连接层改造进行中。
+
+### 核心结论
+
+| 维度 | 说明 |
+| --- | --- |
+| **业务能力** | **不变**：手机无障碍抓取文本 → CustomView 投到眼镜显示 |
+| **连接方式** | **大变**：须安装并协同 **Rokid AI App（≥ 1.9.0）** 或 Hi Rokid，经鉴权拿 token 后 `CXRLink.connect(token)` 建链；不再走本 App 的 `initBluetooth` / `connectBluetooth` 独占直连 |
+| **用户侧变化** | 旧版强调「先断开官方 App」；新版改为「官方 App 是建链前置依赖」 |
+
+### 对升级工作的影响（摘要）
+
+1. **必改**：鉴权流程、`CxrConnectionManager`、依赖坐标（`client-m` → `client-l`）、权限引导（检测官方 App）
+2. **可复用**：无障碍采集、悬浮窗/FAB、文本处理、CustomView JSON 布局思路（API 更名：`openCustomView` → `customViewOpen` 等）
+3. **需评估**：`minSdk` 文档要求 31（当前 29）；拍照 / Wi-Fi 同步等旧能力在 CXR-L 文档中形态不同或缺失
+
+完整对照表、API 映射、状态机与改造清单见：
+
+👉 **[CXR-M → CXR-L 迁移差异说明](./sdk/CXR-M-to-CXR-L-迁移差异.md)**
+
 ## 📚 技术文档
 
-- [Rokid CXR-M SDK 文档](./sdk/doc/)
-  - [设备连接](./sdk/doc/设备连接.md)
-  - [控制与监听设备状态](./sdk/doc/控制与监听设备状态.md)
-  - [数据操作](./sdk/doc/数据操作.md)
-  - [自定义页面场景](./sdk/doc/自定义页面场景.md)
+### 迁移与总览
+- [CXR-M → CXR-L 迁移差异说明](./sdk/CXR-M-to-CXR-L-迁移差异.md)（升级必读）
+- [CXR-L SDK 文档目录](./sdk/CXR%20L%20SDK/README.md)（v1.0.4）
+
+### 旧版 CXR-M（当前集成）
+- [设备连接](./sdk/doc/设备连接.md)
+- [控制与监听设备状态](./sdk/doc/控制与监听设备状态.md)
+- [数据操作](./sdk/doc/数据操作.md)
+- [自定义页面场景](./sdk/doc/自定义页面场景.md)
+
+### 新版 CXR-L（升级目标）
+- [简介](./sdk/CXR%20L%20SDK/01-简介.md)
+- [快速开始](./sdk/CXR%20L%20SDK/02-快速开始.md)
+- [鉴权](./sdk/CXR%20L%20SDK/06-鉴权.md)
+- [连接与会话](./sdk/CXR%20L%20SDK/07-连接与会话.md)
+- [设备控制](./sdk/CXR%20L%20SDK/08-设备控制.md)
+- [眼镜端自定义 View](./sdk/CXR%20L%20SDK/09-眼镜端自定义View.md)
 
 ## 🙏 致谢
 
