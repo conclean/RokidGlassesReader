@@ -68,8 +68,6 @@ fun MainScreen(
     onShowMessage: (String) -> Unit,
     onBrightnessChange: (Int) -> Unit,
     onCheckUpdate: () -> Unit,
-    onPhotoSyncVerify: () -> Unit,
-    onArScreenRecord: () -> Unit,
     onConfirmRebootGlasses: () -> Unit,
     onSettingChanged: () -> Unit = {}
 ) {
@@ -123,8 +121,6 @@ fun MainScreen(
                     onThemeChange = onThemeChange,
                     onShowMessage = onShowMessage,
                     onCheckUpdate = onCheckUpdate,
-                    onArScreenshot = onPhotoSyncVerify,
-                    onArScreenRecord = onArScreenRecord,
                     onConfirmRebootGlasses = onConfirmRebootGlasses
                 )
             }

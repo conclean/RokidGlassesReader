@@ -28,14 +28,8 @@ data class MainUiState(
     val customViewRunning: Boolean,
     val toggleReasons: List<String>,
     val hasSavedConnectionInfo: Boolean = false,
-    /** 设备连接行触发的蓝牙自动重连进行中（用于展示「正在尝试自动重连」） */
+    /** 设备连接行触发的自动重连进行中 */
     val deviceAutoReconnectInProgress: Boolean = false,
-    /** AR 截图：先建立 Wi‑Fi P2P，再出现快门浮窗（标题栏下展示细进度条） */
-    val arScreenshotWifiPreparing: Boolean = false,
-    /** AR 截图 Wi‑Fi 等待阶段剩余秒数（60→0，仅数字展示） */
-    val arScreenshotWifiCountdownSec: Int = 0,
-    /** AR 录屏：视频同步 / 叠字导出进行中 */
-    val arVideoSyncInProgress: Boolean = false,
     val isDarkTheme: Boolean = false,
     val presets: List<TextPreset> = emptyList(),
     val currentPresetId: String? = null,

@@ -173,7 +173,7 @@ GlassesReader 若继续做「眼镜拍照 + Wi-Fi 同步媒体」，需在 CXR-L
 | **S4** | 亮度等设备控制 | `CXRLink.setGlassBrightness` 等 | `MainActivity`、`TextPresetManager`、显示控制组件 | ✅ 亮度已切；重启眼镜暂缓 |
 | **S5** | 文案 / 引导 UX | 「断开官方 App」→「安装并授权官方 App」 | `SettingsScreen`、连接页、README/已知限制 | 🔄 设置页文案已改，其余可继续打磨 |
 | **S6** | 权限清单裁剪 | 按新主路径补 INTERNET/鉴权相关；蓝牙扫描权限可后置裁剪 | `AndroidManifest.xml`、运行时权限 | 建议 |
-| **—** | AR 截图 / 录屏 / Wi‑Fi P2P | **先不动、不删**；入口可先藏或保留但标明未迁 | 见 §6.3 | ✅ 入口 stub；原文归档 `legacy/ArCxrMMainActivity.snippet.txt` |
+| **—** | AR 截图 / 录屏 / Wi‑Fi P2P | 交由官方 App；本应用已整块移除 | 源码 / UI / Manifest / media3 | ✅ 已清理 |
 
 ### 6.2 各模块对照（现状 → CXR-L）
 
@@ -195,19 +195,11 @@ GlassesReader 若继续做「眼镜拍照 + Wi-Fi 同步媒体」，需在 CXR-L
 - 文本处理选项、字号、预设等业务逻辑（仅改底层 SDK 调用）
 - CustomView 布局 JSON 组装思路
 
-### 6.3 AR 截图 / 录屏（暂缓，保留代码）
+### 6.3 AR 截图 / 录屏（已移除）
 
-**决策（2026-08-21）**：升级 CXR-L 主路径时 **不迁移、不删除** AR 相关实现；待验证「与官方 App 并存时官方能否截当前画面」后再定。
+**决策（2026-09-14）**：截图 / 录屏交由 **Rokid 官方 App** 完成；本应用 **整块删除** 相关模块（含 Wi‑Fi P2P、叠字导出、设置页入口、media3 依赖）。
 
-涉及范围（仅作索引，改造期跳过）：
-
-| 层级 | 主要位置 | 旧 API / 行为 |
-| --- | --- | --- |
-| 编排 | `MainActivity` 中 Wi‑Fi P2P、拍照、录屏、媒体同步 | `initWifiP2P` / `takeGlassPhoto` / `controlScene(VIDEO_RECORD)` / sync |
-| 悬浮窗 | `TextOverlayService` AR 倒计时、录屏快门 | 与 CustomView 有交叉，改 S3 时保留方法签名即可 |
-| 周边 | `recording/*`、叠图/导出工具、AR 广播 | 本地处理为主 |
-
-> 注意：换成 `client-l` 后，这些旧 API 可能**编译失败**。处理方式优先：**用 `#` 注释 / 独立门面暂时 stub / 或把 AR 入口从 UI 藏起且相关调用包在未引用模块**——仍以「不删业务代码」为原则，具体在 S0 依赖切换时再定最小编译策略。
+已删除范围（摘要）：`recording/*`、`overlay/Ar*`、`PhotoOverlayComposer` / `GalleryMediaStore` 等工具、`TextOverlayService` AR 浮窗、`MainActivity` AR 流程、设置页「AR截图/AR录屏」按钮。
 
 ---
 

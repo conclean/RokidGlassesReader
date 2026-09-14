@@ -5,13 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -58,11 +55,7 @@ fun SettingsScreen(
     onThemeChange: (Boolean) -> Unit,
     onShowMessage: (String) -> Unit,
     onCheckUpdate: () -> Unit,
-    /** 标题栏「AR截图」 */
-    onArScreenshot: () -> Unit,
-    /** 标题栏「AR录屏」 */
-    onArScreenRecord: () -> Unit,
-    /** 弹窗确认后执行：见 [sdk/doc/控制与监听设备状态.md] notifyGlassReboot */
+    /** 弹窗确认后执行重启眼镜（CXR-L 暂可能不支持） */
     onConfirmRebootGlasses: () -> Unit
 ) {
     var showRebootConfirmDialog by remember { mutableStateOf(false) }
@@ -74,7 +67,7 @@ fun SettingsScreen(
             .padding(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(32.dp)
     ) {
-        // 页面标题和返回按钮；右侧胶囊文字按钮与「设置」同一行对齐；AR 截图先连 Wi‑Fi 时在整行下方显示细进度条
+        // 页面标题和返回按钮
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -111,56 +104,6 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 8.dp)
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    SettingsCapsuleTextButton(
-                        text = "AR截图",
-                        isDarkTheme = uiState.isDarkTheme,
-                        enabled = !uiState.arScreenshotWifiPreparing && !uiState.arVideoSyncInProgress,
-                        onClick = onArScreenshot
-                    )
-                    SettingsCapsuleTextButton(
-                        text = "AR录屏",
-                        isDarkTheme = uiState.isDarkTheme,
-                        enabled = !uiState.arScreenshotWifiPreparing && !uiState.arVideoSyncInProgress,
-                        onClick = onArScreenRecord
-                    )
-                }
-            }
-            if (uiState.arScreenshotWifiPreparing) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "WiFi连接中",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = " ${uiState.arScreenshotWifiCountdownSec}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
         }
         
@@ -211,31 +154,6 @@ fun SettingsScreen(
                     Text("取消")
                 }
             }
-        )
-    }
-}
-
-@Composable
-private fun SettingsCapsuleTextButton(
-    text: String,
-    isDarkTheme: Boolean,
-    onClick: () -> Unit,
-    enabled: Boolean = true
-) {
-    val bg = if (isDarkTheme) DarkButtonBackground else LightButtonBackground
-    val fg =
-        if (isDarkTheme) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    Surface(
-        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        color = bg,
-        shadowElevation = 0.dp
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = fg.copy(alpha = if (enabled) 1f else 0.45f),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         )
     }
 }

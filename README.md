@@ -227,8 +227,8 @@ cd GlassesReader
 
 1. **必改**：鉴权流程、`CxrConnectionManager`、依赖坐标（`client-m` → `client-l`）、权限引导（检测官方 App）
 2. **可复用**：无障碍采集、悬浮窗/FAB、文本处理、CustomView JSON 布局思路（API 更名：`openCustomView` → `customViewOpen` 等）
-3. **已定**：v2 分支 `minSdk = 31`；拍照 / Wi-Fi 同步等 AR 能力暂缓迁移（保留代码）
-4. **S0 状态**：依赖已切到 `client-l:1.0.4`；旧 CXR-M API 调用尚未改完，**当前无法完整编译**，待 S1–S4
+3. **已定**：v2 分支 `minSdk = 31`；AR 截图 / 录屏已从本应用移除，改由官方 App 负责
+4. **S0 状态**：依赖已切到 `client-l:1.0.4`；连接 / CustomView / 鉴权已落地
 
 完整对照表、API 映射、状态机与改造清单见：
 

@@ -8,8 +8,6 @@ import android.net.Uri
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.location.LocationManager
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -21,19 +19,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import com.app.glassesreader.accessibility.ScreenTextPublisher
-import com.app.glassesreader.recording.ArRecordingTimeline
-import com.app.glassesreader.recording.ArScreenTextCollector
-import com.app.glassesreader.recording.ArVideoMedia3OverlayExporter
 import com.app.glassesreader.accessibility.service.ScreenTextService
 import com.app.glassesreader.data.TextPreset
 import com.app.glassesreader.data.TextPresetManager
@@ -51,49 +42,10 @@ import com.app.glassesreader.utils.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
-
-/** AR 截图连 Wi‑Fi：单次失败后重试前间隔（毫秒），直至 60 秒倒计时结束 */
-private const val AR_SCREENSHOT_WIFI_RETRY_DELAY_MS = 1000L
 
 private const val MIN_BRIGHTNESS = 0
 private const val MAX_BRIGHTNESS = 15
 private const val DEFAULT_BRIGHTNESS = 8
-
-/** P2P 刚连上时稍后再拉文件，避免眼镜端尚未写完。 */
-private const val POST_WIFI_SYNC_DELAY_MS = 500L
-
-/** 同步失败后换参数或再试的间隔。 */
-private const val SYNC_FAILURE_RETRY_DELAY_MS = 900L
-
-/**
- * 与 [sdk/doc/拍照录像录音.md] 白名单「4032×3024」一致：接口第一参数为高、第二参数为宽（与 Kotlin 形参名 width/height 可能不一致，以文档为准）。
- */
-private const val PHOTO_SYNC_API_HEIGHT = 4032
-private const val PHOTO_SYNC_API_WIDTH = 3024
-private const val PHOTO_SYNC_QUALITY = 100
-
-/** false 时仅同步并导出原图，不做叠字 */
-private const val PHOTO_OVERLAY_ENABLED = true
-
-/** 与 [sdk/doc/拍照录像录音.md] 一致：unit=1 表示 duration 单位为秒 */
-/** 与眼镜 setVideoParams 一致 */
-private const val AR_VIDEO_DURATION_SEC = 15
-private const val AR_VIDEO_FPS = 30
-private const val AR_VIDEO_WIDTH = 1920
-private const val AR_VIDEO_HEIGHT = 1080
-private const val AR_VIDEO_UNIT_SECONDS = 1
-
-/** 眼镜写完文件后再拉取；关场景后略等再拉，长视频略增等待 */
-private const val POST_VIDEO_RECORD_SYNC_DELAY_MS = 2_500L
-
-/** 略长于 [AR_VIDEO_DURATION_SEC]，兜底自动停录 */
-private const val AR_RECORD_AUTO_STOP_MS = 17_000L
-
-/** 与 [ArVideoMedia3OverlayExporter] 一致，便于 logcat：`adb logcat -s ArVideoMedia3Overlay` */
-private const val AR_VIDEO_OVERLAY_LOG_TAG = "ArVideoMedia3Overlay"
 
 /**
  * MainActivity 用于引导用户授权并启动浮窗服务。
@@ -138,26 +90,9 @@ class MainActivity : ComponentActivity() {
     private val connectionManager = CxrConnectionManager.getInstance()
     private var glassBrightness by mutableStateOf(DEFAULT_BRIGHTNESS)
     private var brightnessSynced = false
-    private var photoSyncInProgress = false
-    private var photoSyncAttemptSeq = 0
     private var deviceAutoReconnectInProgress by mutableStateOf(false)
-    private var arScreenshotWifiPreparing by mutableStateOf(false)
-    private var arScreenshotWifiCountdownSec by mutableStateOf(0)
-    private var showArScreenshotWifiTimeoutDialog by mutableStateOf(false)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var deviceReconnectTimeoutRunnable: Runnable? = null
-    private var arWifiCountdownRunnable: Runnable? = null
-    private var arScreenshotWifiRetryRunnable: Runnable? = null
-    /** 每次进入「AI 截图连 Wi‑Fi」流程自增，用于丢弃旧会话回调、区分超时后的晚到 [onConnected] */
-    private var arScreenshotWifiFlowId: Int = 0
-
-    /** Wi‑Fi 就绪后弹出 AR 录屏快门（而非截图快门） */
-    private var pendingArWifiForRecord: Boolean = false
-    private var arRecordingActive: Boolean = false
-    private var arVideoSyncInProgress by mutableStateOf(false)
-    private var arRecordingCollector: ArScreenTextCollector? = null
-    private var arRecordAnchor: ArRecordingTimeline.SessionAnchor? = null
-    private var arRecordAutoStopRunnable: Runnable? = null
 
     private val overlayPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -306,8 +241,6 @@ class MainActivity : ComponentActivity() {
                         onShowMessage = ::showToast,
                         onBrightnessChange = ::onBrightnessChange,
                         onCheckUpdate = ::checkForUpdate,
-                        onPhotoSyncVerify = ::runPhotoSyncVerify,
-                        onArScreenRecord = ::runArScreenRecordVerify,
                         onConfirmRebootGlasses = ::requestGlassesReboot,
                         onSettingChanged = {
                             // 实时保存到当前预设
@@ -362,32 +295,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    if (showArScreenshotWifiTimeoutDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showArScreenshotWifiTimeoutDialog = false },
-                            title = { Text("Wi‑Fi 连接超时") },
-                            text = {
-                                Text(
-                                    "一分钟内未能建立 Wi‑Fi 连接。建议重启眼镜后再试，有助于恢复直连与传图。\n\n是否立即重启眼镜？"
-                                )
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        showArScreenshotWifiTimeoutDialog = false
-                                        requestGlassesReboot()
-                                    }
-                                ) {
-                                    Text("立即重启")
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showArScreenshotWifiTimeoutDialog = false }) {
-                                    Text("取消")
-                                }
-                            }
-                        )
-                    }
                 }
             }
         }
@@ -406,9 +313,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         cancelDeviceReconnectTimeout()
         deviceAutoReconnectInProgress = false
-        arScreenshotWifiPreparing = false
-        cancelArScreenshotWifiCountdown()
-        showArScreenshotWifiTimeoutDialog = false
         synchronized(MainActivity::class.java) {
             if (uiInstance == this) uiInstance = null
         }
@@ -710,53 +614,6 @@ class MainActivity : ComponentActivity() {
         return reasons
     }
 
-    /**
-     * 设置页标题栏「AR截图 / AR录屏」入口：前置条件与读屏开关一致（悬浮窗、无障碍、SDK 权限、眼镜连接）。
-     * 浮窗圆形快门上不再做这些校验——能点到快门说明已通过本入口把关。
-     */
-    private fun ensureArMediaSettingsEntryOk(): Boolean {
-        val reasons = collectMissingReasons()
-        if (reasons.isNotEmpty()) {
-            showToast(reasons.joinToString("、"))
-            return false
-        }
-        return true
-    }
-
-    /**
-     * 系统 **Wi‑Fi 射频**是否打开（与「已授权附近设备/定位权限」无关，用户可在快捷设置里关掉 Wi‑Fi）。
-     * Wi‑Fi Direct / P2P 依赖主机 Wi‑Fi 处于开启状态。
-     */
-    private fun isSystemWifiRadioEnabled(): Boolean {
-        val wm = applicationContext.getSystemService(WifiManager::class.java) ?: return false
-        @Suppress("DEPRECATION")
-        return wm.isWifiEnabled
-    }
-
-    /**
-     * 系统 **定位服务**总开关是否打开（与「已授予定位运行时权限」是两回事；权限有了但位置信息关掉时，扫描/Wi‑Fi 相关能力常不可用）。
-     */
-    private fun isSystemLocationProviderEnabled(): Boolean {
-        val lm = getSystemService(LocationManager::class.java) ?: return false
-        return lm.isLocationEnabled
-    }
-
-    /**
-     * AR 截图/录屏在建立 Wi‑Fi P2P 之前：要求手机 Wi‑Fi 与系统定位服务已开，避免长时间倒计时却无明确原因。
-     * 在 [ensureArMediaSettingsEntryOk] 之后调用。
-     */
-    private fun ensureArP2pEnvironmentOk(): Boolean {
-        if (!isSystemWifiRadioEnabled()) {
-            showToast("请先打开手机 Wi‑Fi，再使用 AR 截图 / 录屏")
-            return false
-        }
-        if (!isSystemLocationProviderEnabled()) {
-            showToast("请先打开系统「位置信息」开关（非仅应用权限），再使用 AR 截图 / 录屏")
-            return false
-        }
-        return true
-    }
-
     private fun updateReaderAvailability() {
         val reasons = collectMissingReasons()
         TextOverlayService.updateToggleAvailability(
@@ -821,9 +678,6 @@ class MainActivity : ComponentActivity() {
             toggleReasons = collectMissingReasons(),
             hasSavedConnectionInfo = connectionManager.hasSavedConnectionInfo(),
             deviceAutoReconnectInProgress = deviceAutoReconnectInProgress,
-            arScreenshotWifiPreparing = arScreenshotWifiPreparing,
-            arScreenshotWifiCountdownSec = arScreenshotWifiCountdownSec,
-            arVideoSyncInProgress = arVideoSyncInProgress,
             isDarkTheme = isDarkTheme,
             presets = presets,
             currentPresetId = currentPresetId,
@@ -936,75 +790,6 @@ class MainActivity : ComponentActivity() {
         }
         showToast("当前 CXR-L 暂不支持重启眼镜")
         Log.w(LOG_TAG, "notifyGlassReboot deferred on CXR-L")
-    }
-
-    /**
-     * 见 [sdk/doc/设备连接.md]：Wi‑Fi 为高耗能模块，拍照同步流程结束后应反初始化。
-     * 下次进入同步若未连接会再次 [initWifiP2P]（未连接分支里会先 [deinitWifiP2P] 再 init）。
-     * 若实测每次断开后重连不稳定，可再改为延迟 deinit、或仅成功/失败分支调用等策略。
-     */
-    // region AR (CXR-M) — deferred on CXR-L; original body: legacy/ArCxrMMainActivity.snippet.txt
-    private fun deinitWifiP2PAfterPhotoSync(attemptId: Int) {
-        Log.d(LOG_TAG, "[PhotoSync#$attemptId] deinitWifiP2P deferred on CXR-L")
-    }
-
-    private fun runPhotoSyncVerify() {
-        showToast("AR 截图在 CXR-L 升级中暂缓，待验证官方 App 截图能力")
-        Log.w(LOG_TAG, "runPhotoSyncVerify deferred")
-    }
-
-    private fun runArScreenRecordVerify() {
-        showToast("AR 录屏在 CXR-L 升级中暂缓")
-        Log.w(LOG_TAG, "runArScreenRecordVerify deferred")
-    }
-
-    private fun ensureWifiForArScreenshotThenShowShutter() {
-        arScreenshotWifiPreparing = false
-        showToast("AR 截图暂缓（CXR-L）")
-        Log.w(LOG_TAG, "ensureWifiForArScreenshotThenShowShutter deferred")
-    }
-
-    private fun handleArScreenshotWifiConnected(flowId: Int) {
-        Log.d(LOG_TAG, "handleArScreenshotWifiConnected deferred flowId=$flowId")
-    }
-
-    private fun executePhotoSyncAfterShutter(overlayTextSnapshot: String) {
-        showToast("AR 截图暂缓（CXR-L）")
-        Log.w(LOG_TAG, "executePhotoSyncAfterShutter deferred len=${overlayTextSnapshot.length}")
-    }
-
-    private fun startSyncSinglePicture(
-        attemptId: Int,
-        remotePath: String,
-        overlayTextSnapshot: String
-    ) {
-        Log.w(LOG_TAG, "startSyncSinglePicture deferred #$attemptId path=$remotePath")
-    }
-
-    private fun beginArVideoRecording() {
-        showToast("AR 录屏暂缓（CXR-L）")
-        CxrCustomViewManager.stopArRecordingLeadBlink()
-        Log.w(LOG_TAG, "beginArVideoRecording deferred")
-    }
-
-    private fun finishArVideoRecording() {
-        CxrCustomViewManager.stopArRecordingLeadBlink()
-        Log.w(LOG_TAG, "finishArVideoRecording deferred")
-    }
-
-    private fun startSyncRecordedVideo(points: List<ArScreenTextCollector.ArScreenTextPoint>) {
-        arVideoSyncInProgress = false
-        Log.w(LOG_TAG, "startSyncRecordedVideo deferred points=${points.size}")
-    }
-
-    // endregion AR deferred
-
-    private fun cancelArScreenshotWifiCountdown() {
-        arWifiCountdownRunnable?.let { mainHandler.removeCallbacks(it) }
-        arWifiCountdownRunnable = null
-        arScreenshotWifiRetryRunnable?.let { mainHandler.removeCallbacks(it) }
-        arScreenshotWifiRetryRunnable = null
-        arScreenshotWifiCountdownSec = 0
     }
 
     private fun checkForUpdate() {
@@ -1146,36 +931,6 @@ class MainActivity : ComponentActivity() {
         const val LOG_TAG = "MainActivity"
 
         private var uiInstance: MainActivity? = null
-
-        fun handleArShutterBroadcast(snapshotText: String) {
-            val act = synchronized(MainActivity::class.java) { uiInstance }
-            act?.runOnUiThread {
-                act.executePhotoSyncAfterShutter(snapshotText)
-            }
-        }
-
-        fun handleArRecordStart() {
-            val act = synchronized(MainActivity::class.java) { uiInstance }
-            act?.runOnUiThread {
-                act.beginArVideoRecording()
-            }
-        }
-
-        fun handleArRecordStop() {
-            val act = synchronized(MainActivity::class.java) { uiInstance }
-            act?.runOnUiThread {
-                act.finishArVideoRecording()
-            }
-        }
-
-        /**
-         * 眼镜 AR 录屏场景进行中。读屏关闭时不可调用 [com.app.glassesreader.sdk.CxrCustomViewManager.close]，
-         * 否则会打断录像（见 [TextOverlayService]）。
-         */
-        fun isArVideoRecordingActive(): Boolean {
-            val act = synchronized(MainActivity::class.java) { uiInstance } ?: return false
-            return act.arRecordingActive
-        }
 
         private const val PREF_APP_SETTINGS = "gr_app_settings"
         private const val KEY_OVERLAY_ENABLED = "overlay_enabled"
