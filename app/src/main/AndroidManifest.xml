@@ -7,22 +7,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-<!--    rokid permission -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <!-- CXR-L：经官方 App 鉴权建链，本 App 不再 BLE 扫描；INTERNET 必需 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 以下为 AR 截图/录屏（CXR-M Wi‑Fi P2P）遗留能力预留，当前功能暂缓 -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-    <!-- Android 13+：Wi‑Fi 直连 / P2P 同步媒体所需 -->
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".GlassesReaderApp"
@@ -49,7 +43,7 @@
         <activity
             android:name=".ui.screens.DeviceScanActivity"
             android:exported="false"
-            android:label="扫描智能眼镜"
+            android:label="设备连接"
             android:theme="@style/Theme.GlassesReader" />
         <service
             android:name=".accessibility.service.ScreenTextService"

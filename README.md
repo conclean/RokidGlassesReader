@@ -45,14 +45,12 @@ GlassesReader 是一款基于 Kotlin 与 Jetpack Compose 构建的 Android 工�
    - ✅ 悬浮窗权限授权
    - ✅ 无障碍服务启用（在系统设置中找到 `ScreenTextService` 并启用）
    - ✅ 通知权限授权（Android 13+）
-   - ✅ 蓝牙与定位权限授权
 
-2. **设备连接**：
-   - 前往"设备连接"页，点击"扫描设备"
-   - 选择目标 Rokid 眼镜设备
-   - ⚠️ **重要**：连接前请先断开官方应用的蓝牙配对，或将眼镜进入配对模式
-   - 等待连接成功（连接过程可能需要 10 秒左右）
-   - 首次连接成功后，连接参数会自动保存，下次启动应用时会自动尝试重连
+2. **设备连接**（CXR-L）：
+   - 手机安装 **Rokid AI App（≥ 1.9.0）**，并在官方 App 内先完成眼镜配对/连接
+   - 打开本应用「设备连接」页，点击「授权并连接」
+   - 在官方 App 授权页同意后，等待本应用链路就绪
+   - 授权 token 会本地保存，下次启动可自动尝试重连
 
 3. **启动服务**：
    - 当权限与连接全部就绪时，点击主页右下角圆形 FAB 按钮启动读屏服务
@@ -94,8 +92,8 @@ app/src/main/java/com/app/glassesreader/
 │   └── service/
 │       └── ScreenTextService.kt      # 无障碍服务，抓取屏幕文字
 ├── sdk/
-│   ├── BluetoothHelper.kt            # 蓝牙扫描与设备管理工具
-│   ├── CxrConnectionManager.kt       # Rokid SDK 蓝牙连接管理（初始化、连接、自动重连）
+│   ├── CxrAuthManager.kt             # CXR-L 官方 App 鉴权与 token
+│   ├── CxrConnectionManager.kt       # CXRLink 会话连接与链路就绪
 │   └── CxrCustomViewManager.kt       # 眼镜端自定义页面管理（打开、更新、关闭）
 ├── service/
 │   └── overlay/
@@ -110,13 +108,13 @@ app/src/main/java/com/app/glassesreader/
     │   ├── CommonComponents.kt       # 通用组件（ServiceFab、StatusListItem 等）
     │   ├── Dialogs.kt                # 对话框组件（自动重连失败、更新提示等）
     │   ├── DisplayControls.kt        # 显示控制组件（亮度、字体大小、文本处理选项）
-    │   ├── DeviceList.kt             # 设备列表组件
     │   └── FloatingToggle.kt         # 悬浮窗开关组件
     ├── model/                        # 数据模型
     │   └── MainUiModel.kt            # 主界面 UI 状态模型（MainTab、MainUiState）
     ├── screens/                      # 页面组件
-    │   ├── MainScreen.kt             # 主屏幕组件（包含权限引导、设备连接、显示设置、应用设置标签页）
-    │   └── DeviceScanActivity.kt     # 设备扫描页面
+    │   ├── MainScreen.kt             # 主屏幕组件
+    │   ├── SettingsScreen.kt         # 设置页（权限、连接、应用设置）
+    │   └── DeviceScanActivity.kt     # 设备连接页（官方 App 鉴权 + 建链）
     └── theme/                        # Material Design 3 主题配置
         ├── Color.kt                  # 颜色定义
         ├── Theme.kt                  # 主题配置
@@ -153,8 +151,7 @@ cd GlassesReader
 - `SYSTEM_ALERT_WINDOW`：创建悬浮窗，用于显示开关按钮
 - `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`：Android 14+ 前台服务所需
 - `POST_NOTIFICATIONS`（Android 13+）：显示前台服务常驻通知
-- `ACCESS_COARSE_LOCATION`、`ACCESS_FINE_LOCATION`：蓝牙扫描所需
-- `BLUETOOTH`、`BLUETOOTH_ADMIN`、`BLUETOOTH_CONNECT`、`BLUETOOTH_SCAN`（Android 12+）：蓝牙通信
+- `INTERNET`：CXR-L 与官方 App / 服务通信
 
 #### 系统服务
 - **无障碍服务** `ScreenTextService`：监听屏幕内容变化事件并整理文本
@@ -166,14 +163,12 @@ cd GlassesReader
 - 检查并引导用户授权悬浮窗权限
 - 检查并引导用户启用无障碍服务
 - 检查并引导用户授权通知权限（Android 13+）
-- 检查并引导用户授权蓝牙相关权限
 
 ### 2. 设备连接（CONNECT）
-- 扫描附近的 Rokid 蓝牙设备
-- 显示设备连接状态（已连接/未连接）
-- 显示眼镜端自定义页面运行状态（已启动/未启动）
-- **自动重连**：应用启动时自动尝试重连已配对的设备
-- 提供"重新扫描"功能
+- 检测 Rokid AI App / Hi Rokid 是否已安装
+- 引导用户在官方 App 完成授权，获取 token
+- 建立 CXR-L CUSTOMVIEW 会话并显示链路状态
+- **自动重连**：应用启动时若有本地 token 则自动尝试建链
 
 ### 3. 显示设置（DISPLAY）
 - **亮度调节**：0-15 档位，实时同步到眼镜端
@@ -191,21 +186,18 @@ cd GlassesReader
 
 ## ⚠️ 已知限制与注意事项
 
-### 蓝牙连接限制（当前 CXR-M）
-- **独占连接**：Rokid 眼镜在同一时间只能与一个应用建立 SDK 连接。如果官方应用已连接，需要先断开其配对，再由本应用发起连接。
-- **连接超时**：如果 `initBluetooth()` 在 10 秒内未收到回调，会判定为连接超时。可能原因：
-  1. 设备已被其他应用占用
-  2. SDK 内部错误
-  3. 设备不支持多连接
-- **自动重连失败**：如果自动重连失败，应用会弹出提示，引导用户前往设备连接页面手动连接
+### 连接限制（CXR-L）
+- **依赖官方 App**：须安装 Rokid AI App（≥ 1.9.0）或 Hi Rokid，并完成本应用授权后才能建链。
+- **眼镜先在官方 App 配对**：连接本应用前，请确保眼镜已在官方应用内完成配对/连接。
+- **自动重连失败**：若本地 token 失效或链路未就绪，应用会提示前往「设备连接」页重新授权连接。
 
 ### 文本采集限制
 - 文本采集依赖目标应用的无障碍节点，若页面采用 Canvas 自绘等方案可能无法完整捕获
-- 眼镜端自定义页面依赖蓝牙连接，如连接断开将退回占位文本
+- 眼镜端自定义页面依赖 CXR-L 链路，如连接断开将退回占位文本
 
-### 使用建议（当前 CXR-M）
-- 连接前确保官方应用已断开蓝牙配对
-- 如果连接失败，尝试将眼镜进入配对模式后重新扫描连接
+### 使用建议
+- 安装并保持 Rokid AI App 可用，先在官方 App 内连上眼镜
+- 在本应用「设备连接」页完成授权并等待链路就绪
 - 建议在连接成功后，先测试文本采集功能是否正常
 
 ## 🔄 SDK 升级说明（CXR-M → CXR-L）
@@ -221,7 +213,7 @@ cd GlassesReader
 
 稳定后计划将 `v2/cxr-l` 合回 `main` 并打 tag `v2.0.0`；此后默认只维护 2.x。
 
-当前代码运行时仍基于 **CXR-M**；分支上已入库 CXR-L 文档与差异说明，连接层改造进行中。
+当前 **v2 分支运行时已基于 CXR-L**（官方 App 鉴权 + `CXRLink`）；旧 BLE 扫描直连路径已移除。
 
 ### 核心结论
 

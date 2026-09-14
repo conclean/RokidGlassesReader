@@ -11,7 +11,6 @@ import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,8 +45,8 @@ import com.app.glassesreader.ui.theme.GlassesReaderTheme
 import CustomIconButton
 
 /**
- * CXR-L 连接页：检测官方 App → 鉴权拿 token → connect 建链。
- * （保留原 Activity 名以免改 Manifest；不再以 BLE 扫描为主路径）
+ * CXR-L 设备连接页：检测官方 App → 鉴权拿 token → connect 建链。
+ * （保留原 Activity 类名以免改 Manifest 引用）
  */
 class DeviceScanActivity : ComponentActivity() {
 
@@ -71,12 +70,6 @@ class DeviceScanActivity : ComponentActivity() {
         setResult(RESULT_OK)
         finish()
     }
-
-    private val authLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            // AuthorizationHelper 走 startActivityForResult；部分机型会回调到此
-            handleAuthResult(result.resultCode, result.data)
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

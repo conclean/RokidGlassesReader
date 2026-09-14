@@ -182,7 +182,7 @@ GlassesReader 若继续做「眼镜拍照 + Wi-Fi 同步媒体」，需在 CXR-L
 | Gradle | `com.rokid.cxr:client-m:…` | ✅ 已改为 `com.rokid.cxr:client-l:1.0.4`；**minSdk = 31** |
 | 鉴权 | 无 | `AuthorizationHelper` 拿 token；官方 App ≥ 1.9.0 |
 | `CxrConnectionManager` | `initBluetooth` / `connectBluetooth` / UUID·MAC 持久化 | 鉴权 + `CXRLink.connect(token)` + `onCXRLConnected`∧`onGlassBtConnected` |
-| `BluetoothHelper` | 主连接入口扫描 | 主路径不再依赖；可保留代码但退出主流程 |
+| `BluetoothHelper` | 主连接入口扫描 | ✅ 已删除（CXR-L 不再本 App 扫描） |
 | `CxrCustomViewManager` | `CxrApi.open/update/closeCustomView` | `CXRLink.customViewOpen/Update/Close`；链路就绪后再 open |
 | 亮度 | `CxrApi.setGlassBrightness` | `CXRLink.setGlassBrightness`；链路就绪即可 |
 | 权限引导 | 悬浮窗 / 无障碍 / 蓝牙 / 通知 | **新增**检测官方 App + 授权 |

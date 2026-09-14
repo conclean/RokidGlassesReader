@@ -53,7 +53,6 @@ fun SettingsScreen(
     onRequestOverlay: () -> Unit,
     onRequestAccessibility: () -> Unit,
     onRequestNotification: () -> Unit,
-    onRequestSdkPermissions: () -> Unit,
     onOpenDeviceScan: () -> Unit,
     onToggleOverlay: (Boolean) -> Unit,
     onThemeChange: (Boolean) -> Unit,
@@ -170,8 +169,7 @@ fun SettingsScreen(
             uiState = uiState,
             onRequestOverlay = onRequestOverlay,
             onRequestAccessibility = onRequestAccessibility,
-            onRequestNotification = onRequestNotification,
-            onRequestSdkPermissions = onRequestSdkPermissions
+            onRequestNotification = onRequestNotification
         )
 
         // 设备连接部分
@@ -250,8 +248,7 @@ private fun PermissionSetupSection(
     uiState: com.app.glassesreader.ui.model.MainUiState,
     onRequestOverlay: () -> Unit,
     onRequestAccessibility: () -> Unit,
-    onRequestNotification: () -> Unit,
-    onRequestSdkPermissions: () -> Unit
+    onRequestNotification: () -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -306,21 +303,6 @@ private fun PermissionSetupSection(
                         onClick = onRequestNotification
                     )
                 }
-
-                Divider(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f),
-                    thickness = 0.5.dp
-                )
-
-                // 最后一行：蓝牙与定位权限
-                SimplePermissionItem(
-                    title = "蓝牙与定位权限",
-                    isCompleted = uiState.sdkPermissionsGranted,
-                    onClick = onRequestSdkPermissions
-                )
             }
         }
     }
@@ -392,8 +374,7 @@ private fun DeviceConnectionSection(
 
                 // 下半部分：复用 SimplePermissionItem，风格与权限引导完全一致
                 SimplePermissionItem(
-                    title = if (uiState.glassesConnected) "眼镜已连接" else "眼镜未配对本应用",
-                    // 已连接视为完成，展示灰字 + 蓝色对勾；未配对视为未完成，展示红字 + 红色箭头
+                    title = if (uiState.glassesConnected) "眼镜已连接" else "未连接，点击授权连接",
                     isCompleted = uiState.glassesConnected,
                     onClick = onOpenDeviceScan,
                     clickEnabled = !uiState.deviceAutoReconnectInProgress

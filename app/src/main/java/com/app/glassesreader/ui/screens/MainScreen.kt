@@ -61,7 +61,6 @@ fun MainScreen(
     onRequestOverlay: () -> Unit,
     onRequestAccessibility: () -> Unit,
     onRequestNotification: () -> Unit,
-    onRequestSdkPermissions: () -> Unit,
     onOpenDeviceScan: () -> Unit,
     onToggleService: () -> Unit,
     onOverlaySettingChange: (Boolean) -> Unit,
@@ -119,7 +118,6 @@ fun MainScreen(
                     onRequestOverlay = onRequestOverlay,
                     onRequestAccessibility = onRequestAccessibility,
                     onRequestNotification = onRequestNotification,
-                    onRequestSdkPermissions = onRequestSdkPermissions,
                     onOpenDeviceScan = onOpenDeviceScan,
                     onToggleOverlay = onOverlaySettingChange,
                     onThemeChange = onThemeChange,
@@ -190,9 +188,8 @@ private fun HomeScreen(
         }
         
         // 状态提示横幅 - 显示未完成的权限或未连接设备
-        val hasUncompletedPermissions = !uiState.overlayGranted || 
-            !uiState.accessibilityGranted || 
-            !uiState.sdkPermissionsGranted ||
+        val hasUncompletedPermissions = !uiState.overlayGranted ||
+            !uiState.accessibilityGranted ||
             (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU && !uiState.notificationGranted)
         
         if (hasUncompletedPermissions) {

@@ -135,7 +135,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    private lateinit var requiredSdkPermissions: Array<String>
     private val connectionManager = CxrConnectionManager.getInstance()
     private var glassBrightness by mutableStateOf(DEFAULT_BRIGHTNESS)
     private var brightnessSynced = false
@@ -175,14 +174,9 @@ class MainActivity : ComponentActivity() {
             notificationGranted = granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
         }
 
-    private val sdkPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
-            sdkPermissionsGranted = areSdkPermissionsGranted()
-        }
-
     private val deviceScanLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            // 从扫描页面返回后，刷新连接状态
+            // 从连接页返回后，刷新连接状态
             checkConnectionStatus()
         }
 
@@ -243,7 +237,6 @@ class MainActivity : ComponentActivity() {
                 }
             })
         }, 1000) // 延迟 1 秒，确保应用初始化完成
-        requiredSdkPermissions = createRequiredSdkPermissionArray()
         // 初始化 CxrCustomViewManager
         CxrCustomViewManager.init(this)
         
@@ -306,7 +299,6 @@ class MainActivity : ComponentActivity() {
                         onRequestOverlay = ::openOverlaySettings,
                         onRequestAccessibility = ::openAccessibilitySettings,
                         onRequestNotification = ::requestNotificationPermission,
-                        onRequestSdkPermissions = ::requestSdkPermissions,
                         onOpenDeviceScan = ::onDeviceConnectionRowClick,
                         onToggleService = ::onToggleReaderRequested,
                         onOverlaySettingChange = ::onOverlaySettingChange,
@@ -445,21 +437,14 @@ class MainActivity : ComponentActivity() {
         Log.d(LOG_TAG, "Overlay permission granted: $overlayPermissionGranted")
         Log.d(LOG_TAG, "Accessibility service enabled: $accessibilityEnabled")
         Log.d(LOG_TAG, "Notification permission granted: $notificationGranted")
-        Log.d(LOG_TAG, "SDK permissions granted: $sdkPermissionsGranted")
         Log.d(LOG_TAG, "Overlay service running: $serviceRunning")
 
-        if (sdkPermissionsGranted) {
-            checkConnectionStatus()
-            if (glassesConnected && readerEnabled) {
-                // 只有当读屏服务开启且眼镜已连接时，才确保自定义页面打开
-                // 如果页面被外部关闭，这里会尝试重新打开
-                if (!CxrCustomViewManager.isViewActive()) {
-                    Log.d(LOG_TAG, "Reader enabled but view closed, ensuring initialized...")
-                }
-                CxrCustomViewManager.ensureInitialized()
+        checkConnectionStatus()
+        if (glassesConnected && readerEnabled) {
+            if (!CxrCustomViewManager.isViewActive()) {
+                Log.d(LOG_TAG, "Reader enabled but view closed, ensuring initialized...")
             }
-        } else {
-            glassesConnected = false
+            CxrCustomViewManager.ensureInitialized()
         }
 
         syncBrightnessWithGlass()
@@ -470,25 +455,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openDeviceScan() {
-        if (!sdkPermissionsGranted) {
-            Log.w(LOG_TAG, "SDK permissions not granted, cannot open device scan")
-            return
-        }
         val intent = Intent(this, DeviceScanActivity::class.java)
         deviceScanLauncher.launch(intent)
     }
 
     /**
-     * 设置页「设备连接」行：已连接则直接进入扫描页；未连接时若有历史连接参数则先 [CxrConnectionManager.autoReconnect]，
-     * 在区块内展示「正在尝试自动重连」，成功则仅刷新状态，失败则提示并打开扫描页。
+     * 设置页「设备连接」行：已连接则进入连接页；未连接时若有已保存 token 则先自动重连，
+     * 失败则打开连接页引导授权。
      */
     private fun onDeviceConnectionRowClick() {
-        if (!sdkPermissionsGranted) {
-            Log.w(LOG_TAG, "SDK permissions not granted, cannot open device scan")
-            showToast("请先授予蓝牙等相关权限")
-            requestSdkPermissions()
-            return
-        }
         if (glassesConnected) {
             openDeviceScan()
             return
@@ -517,7 +492,7 @@ class MainActivity : ComponentActivity() {
             }
 
             override fun onDisconnected() {
-                // 重连过程中可能出现短暂断开，不在此结束 loading，等待成功或失败回调
+                // 重连过程中可能出现短暂断开，不在此结束 loading
             }
 
             override fun onFailed(message: String?) {
@@ -526,26 +501,17 @@ class MainActivity : ComponentActivity() {
                     cancelDeviceReconnectTimeout()
                     deviceAutoReconnectInProgress = false
                     checkConnectionStatus()
-                    showToast("自动重连失败，将打开扫描页，请手动连接")
+                    showToast("自动重连失败，将打开连接页")
                     openDeviceScan()
                 }
-            }
-
-            override fun onConnectionInfo(
-                socketUuid: String?,
-                macAddress: String?,
-                rokidAccount: String?,
-                glassesType: Int
-            ) {
             }
         }
 
         val attempted = connectionManager.autoReconnect(callback)
         if (!attempted && deviceAutoReconnectInProgress) {
-            // 未发起异步重连（例如 Context 为空等），且同步路径也未调用 onConnected
             cancelDeviceReconnectTimeout()
             deviceAutoReconnectInProgress = false
-            showToast("无法启动自动重连，将打开扫描页")
+            showToast("无法启动自动重连，将打开连接页")
             openDeviceScan()
         }
     }
@@ -556,7 +522,7 @@ class MainActivity : ComponentActivity() {
             if (!deviceAutoReconnectInProgress) return@Runnable
             deviceAutoReconnectInProgress = false
             checkConnectionStatus()
-            showToast("自动重连超时，将打开扫描页，请手动连接")
+            showToast("自动重连超时，将打开连接页")
             openDeviceScan()
         }
         mainHandler.postDelayed(deviceReconnectTimeoutRunnable!!, 45_000L)
@@ -568,10 +534,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkConnectionStatus() {
-        if (sdkPermissionsGranted) {
-            glassesConnected = connectionManager.isConnected()
-            Log.d(LOG_TAG, "Connection status: $glassesConnected")
-        }
+        glassesConnected = connectionManager.isConnected()
+        Log.d(LOG_TAG, "Connection status: $glassesConnected")
     }
 
     private fun openOverlaySettings() {
@@ -592,11 +556,6 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (notificationGranted) return
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-
-    private fun requestSdkPermissions() {
-        if (sdkPermissionsGranted) return
-        sdkPermissionLauncher.launch(requiredSdkPermissions)
     }
 
     private fun startOverlayService(autoStarted: Boolean = false) {
@@ -654,28 +613,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun areSdkPermissionsGranted(): Boolean {
-        return requiredSdkPermissions.all { permission ->
-            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    private fun createRequiredSdkPermissionArray(): Array<String> {
-        val permissions = mutableListOf(
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.BLUETOOTH,
-            Manifest.permission.BLUETOOTH_ADMIN
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissions.add(Manifest.permission.BLUETOOTH_SCAN)
-            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
-        }
-        return permissions.toTypedArray()
-    }
+    private fun areSdkPermissionsGranted(): Boolean = true
 
 
     private fun maybeAutoControlReader() {
@@ -766,13 +704,6 @@ class MainActivity : ComponentActivity() {
         if (!accessibilityEnabled) {
             reasons += "请开启无障碍服务"
         }
-        if (!sdkPermissionsGranted) {
-            reasons += if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                "请授权蓝牙、定位与附近设备"
-            } else {
-                "请授权蓝牙与定位"
-            }
-        }
         if (!glassesConnected) {
             reasons += "请连接智能眼镜"
         }
@@ -836,10 +767,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun syncBrightnessWithGlass() {
-        if (!sdkPermissionsGranted) {
-            brightnessSynced = false
-            return
-        }
         if (glassesConnected) {
             if (!brightnessSynced) {
                 pushBrightnessToGlass(glassBrightness)
