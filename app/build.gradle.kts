@@ -24,7 +24,8 @@ android {
 
     defaultConfig {
         applicationId = "com.app.glassesreader"
-        minSdk = 29
+        // CXR-L 文档要求 minSdk 31（Android 12+）
+        minSdk = 31
         targetSdk = 35
         versionCode = 20
         versionName = "2.0.0-dev"
@@ -131,7 +132,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    implementation("com.rokid.cxr:client-m:1.0.1-20250812.080117-2")
+    // CXR-L（经官方 App 鉴权协同）；原 CXR-M 为 client-m
+    implementation("com.rokid.cxr:client-l:1.0.4")
 
     implementation ("com.squareup.retrofit2:retrofit:2.9.0")
     implementation ("com.squareup.retrofit2:converter-gson:2.9.0")

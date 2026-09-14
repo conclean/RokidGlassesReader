@@ -8,8 +8,19 @@ import android.content.IntentFilter
 import android.os.Build
 import com.app.glassesreader.overlay.ArRecordBroadcast
 import com.app.glassesreader.overlay.ArShutterBroadcast
+import com.rokid.cxr.link.CXRLink
 
 class GlassesReaderApp : Application() {
+
+    companion object {
+        /** 进程内复用的 CXR-L 链路（CUSTOMVIEW 会话） */
+        @JvmStatic
+        var sharedLink: CXRLink? = null
+
+        fun resetSession() {
+            sharedLink = null
+        }
+    }
 
     private val arShutterReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {

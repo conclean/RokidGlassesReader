@@ -5,9 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import org.json.JSONObject
-import com.rokid.cxr.client.extend.CxrApi
-import com.rokid.cxr.client.extend.listeners.CustomViewListener
-import com.rokid.cxr.client.utils.ValueUtil
+import com.app.glassesreader.GlassesReaderApp
+import com.rokid.cxr.link.callbacks.ICustomViewCbk
 
 /**
  * Rokid 眼镜端自定义页面管理器
@@ -319,40 +318,40 @@ object CxrCustomViewManager {
      */
     fun ensureInitialized() {
         runCatching {
-            if (!CxrApi.getInstance().isBluetoothConnected) {
-                Log.d(TAG, "Bluetooth not connected, skip opening custom view.")
+            if (!CxrConnectionManager.getInstance().isLinkReady()) {
+                Log.d(TAG, "Link not ready, skip opening custom view.")
                 val wasReady = viewReady
                 openRequested = false
                 viewReady = false
-                // 如果之前是打开状态，现在因为蓝牙断开而关闭，需要通知
                 if (wasReady) {
                     viewStateListener?.onViewStateChanged(false)
                 }
                 return
             }
-            registerListenerIfNeeded()
+            val link = GlassesReaderApp.sharedLink
+            if (link == null) {
+                Log.w(TAG, "sharedLink is null, skip opening custom view.")
+                return
+            }
+            // 每次确保回调挂在当前 link 上（重连后 sharedLink 会换实例）
+            listenerRegistered = false
+            registerListenerIfNeeded(link)
             if (!openRequested) {
                 Log.d(TAG, "Opening custom view...")
                 openRequested = true
-                lastOpenRequestTime = System.currentTimeMillis() // 记录打开请求时间
+                lastOpenRequestTime = System.currentTimeMillis()
                 val layoutJson = buildBaseLayoutJson()
-                // 参考文档：自定义页面场景.md 第1节
-                // openCustomView(content) 接受 JSON 描述字符串，返回 CxrStatus
-                val status = CxrApi.getInstance().openCustomView(layoutJson)
-                Log.d(TAG, "openCustomView status: $status")
-                if (status == ValueUtil.CxrStatus.REQUEST_FAILED) {
+                val ok = link.customViewOpen(layoutJson)
+                Log.d(TAG, "customViewOpen result: $ok")
+                if (!ok) {
                     openRequested = false
                     lastOpenRequestTime = 0
                 }
             } else if (viewReady) {
-                // 页面已打开且就绪，发送待处理的文本
                 deliverPendingTextIfNeeded()
             } else {
-                // openRequested 为 true 但 viewReady 为 false
-                // 说明页面被外部关闭了（例如用户在眼镜端手动关闭）
-                // 不在这里自动重试，避免循环，由外部通过 ensureInitializedWithRetry 控制重试
                 Log.d(TAG, "View was closed externally (openRequested=true but viewReady=false), resetting state...")
-                openRequested = false // 重置状态，允许外部重新打开
+                openRequested = false
             }
         }.onFailure { throwable ->
             Log.e(TAG, "ensureInitialized failed: ${throwable.message}", throwable)
@@ -473,10 +472,8 @@ object CxrCustomViewManager {
             latestRawText = DEFAULT_EMPTY_TEXT
             openRequested = false
             viewReady = false
-            // 参考文档：自定义页面场景.md 第4节
-            val status = CxrApi.getInstance().closeCustomView()
-            Log.d(TAG, "closeCustomView status: $status")
-            // 注意：onClosed() 回调会在 SDK 确认关闭后触发，这里不需要手动通知
+            val ok = GlassesReaderApp.sharedLink?.customViewClose()
+            Log.d(TAG, "customViewClose result: $ok")
         }.onFailure { throwable ->
             Log.e(TAG, "close custom view failed: ${throwable.message}", throwable)
         }
@@ -577,69 +574,43 @@ object CxrCustomViewManager {
      * 参考文档：自定义页面场景.md 第2节 "监听界面状态"
      * 使用 setCustomViewListener() 方法注册监听器，监听页面生命周期事件
      */
-    private fun registerListenerIfNeeded() {
+    private fun registerListenerIfNeeded(link: com.rokid.cxr.link.CXRLink) {
         if (listenerRegistered) return
-        // 参考文档：自定义页面场景.md 第2节
-        // setCustomViewListener() 注册 CustomViewListener 监听器
-        CxrApi.getInstance().setCustomViewListener(object : CustomViewListener {
-            /**
-             * 图标已下发回调
-             * 参考文档：自定义页面场景.md 第2节
-             */
-            override fun onIconsSent() {
+        link.setCXRCustomViewCbk(object : ICustomViewCbk {
+            override fun onCustomViewIconsSent() {
                 Log.d(TAG, "Custom view icons sent.")
             }
 
-            /**
-             * 页面已打开回调
-             * 参考文档：自定义页面场景.md 第2节
-             */
-            override fun onOpened() {
+            override fun onCustomViewOpened() {
                 Log.d(TAG, "Custom view opened.")
                 viewReady = true
-                // 重置重试计数器，因为页面已成功打开
                 reopenAttemptCount = 0
                 lastReopenAttemptTime = 0
-                // 页面成功打开后，更新保护时间，防止初始化过程中的短暂关闭
                 lastOpenRequestTime = System.currentTimeMillis()
                 viewStateListener?.onViewStateChanged(true)
                 deliverPendingTextIfNeeded()
             }
 
-            /**
-             * 打开失败回调
-             * 参考文档：自定义页面场景.md 第2节
-             */
-            override fun onOpenFailed(errorCode: Int) {
-                Log.e(TAG, "Custom view open failed: $errorCode")
+            override fun onCustomViewError(code: Int, msg: String?) {
+                Log.e(TAG, "Custom view error: code=$code msg=$msg")
                 viewReady = false
                 openRequested = false
                 viewStateListener?.onViewStateChanged(false)
             }
 
-            /**
-             * 页面已更新回调
-             * 参考文档：自定义页面场景.md 第2节
-             */
-            override fun onUpdated() {
+            override fun onCustomViewUpdated() {
                 Log.d(TAG, "Custom view updated.")
             }
 
-            /**
-             * 页面已关闭回调
-             * 参考文档：自定义页面场景.md 第2节
-             */
-            override fun onClosed() {
+            override fun onCustomViewClosed() {
                 val currentTime = System.currentTimeMillis()
                 val timeSinceOpen = currentTime - lastOpenRequestTime
-                
-                // 如果是在打开请求后短时间内关闭，可能是初始化过程中的短暂关闭，忽略此事件
+
                 if (lastOpenRequestTime > 0 && timeSinceOpen < OPEN_PROTECTION_MS) {
-                    Log.d(TAG, "Custom view closed shortly after open request (${timeSinceOpen}ms), ignoring (likely initialization transient)")
-                    // 不重置状态，等待页面真正打开
+                    Log.d(TAG, "Custom view closed shortly after open request (${timeSinceOpen}ms), ignoring")
                     return
                 }
-                
+
                 Log.d(TAG, "Custom view closed.")
                 viewReady = false
                 openRequested = false
@@ -657,32 +628,23 @@ object CxrCustomViewManager {
         }
     }
 
-    /**
-     * 发送文本到眼镜端视图
-     * 
-     * 参考文档：自定义页面场景.md 第3节 "更新界面"
-     * 使用 updateCustomView(content) 方法更新已打开界面的特定控件
-     * content 为 JSON 数组，指定操作类型、目标控件 ID 以及修改属性
-     */
     private fun sendTextToView(text: String) {
         val toGlass = effectiveDisplayTextForArScreenshotCountdown(text)
         val payload = buildUpdatePayload(toGlass)
-        val status = runCatching {
-            // 参考文档：自定义页面场景.md 第3节
-            // updateCustomView(content) 更新已打开界面的特定控件
-            CxrApi.getInstance().updateCustomView(payload)
+        val ok = runCatching {
+            GlassesReaderApp.sharedLink?.customViewUpdate(payload)
         }.onFailure { throwable ->
-            Log.e(TAG, "updateCustomView error: ${throwable.message}", throwable)
+            Log.e(TAG, "customViewUpdate error: ${throwable.message}", throwable)
         }.getOrNull()
 
-        if (status == ValueUtil.CxrStatus.REQUEST_FAILED) {
-            Log.w(TAG, "updateCustomView failed, will retry when possible.")
-        } else {
+        if (ok == false) {
+            Log.w(TAG, "customViewUpdate failed, will retry when possible.")
+        } else if (ok == true) {
             latestText = text
-            if (status == ValueUtil.CxrStatus.REQUEST_SUCCEED) {
-                pendingText = null
-            }
-            Log.d(TAG, "updateCustomView status: $status")
+            pendingText = null
+            Log.d(TAG, "customViewUpdate ok")
+        } else {
+            Log.w(TAG, "customViewUpdate skipped: link null")
         }
     }
 
@@ -709,8 +671,8 @@ object CxrCustomViewManager {
             ]
         """.trimIndent()
         runCatching {
-            val status = CxrApi.getInstance().updateCustomView(payload)
-            Log.d(TAG, "updateTextSize status: $status")
+            val ok = GlassesReaderApp.sharedLink?.customViewUpdate(payload)
+            Log.d(TAG, "updateTextSize result: $ok")
         }.onFailure { throwable ->
             Log.e(TAG, "updateTextSize error: ${throwable.message}", throwable)
         }
@@ -739,11 +701,6 @@ object CxrCustomViewManager {
             ]
         """.trimIndent()
     }
-
-    private val CxrApi.isBluetoothConnected: Boolean
-        get() = runCatching { isBluetoothConnected() }
-            .onFailure { Log.e(TAG, "Check bluetooth connection failed: ${it.message}", it) }
-            .getOrDefault(false)
 
     private const val MAX_LENGTH = 500
 

@@ -359,7 +359,7 @@ private fun DeviceConnectionSection(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "若看到连接状态显示未连接，请确保智能眼镜已在系统蓝牙完成配对，并断开官方应用后重新尝试。",
+                        text = "请先安装并打开官方应用（Rokid AI App ≥ 1.9.0 或 Hi Rokid），完成本应用授权后即可连接。眼镜需已在官方应用内完成配对。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

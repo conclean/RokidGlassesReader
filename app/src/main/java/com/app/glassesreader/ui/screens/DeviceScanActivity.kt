@@ -1,6 +1,6 @@
 package com.app.glassesreader.ui.screens
 
-import android.bluetooth.BluetoothDevice
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -20,10 +20,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,96 +33,80 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import com.app.glassesreader.sdk.BluetoothHelper
+import com.app.glassesreader.sdk.CxrAuthManager
 import com.app.glassesreader.sdk.CxrConnectionManager
 import com.app.glassesreader.sdk.CxrCustomViewManager
-import com.app.glassesreader.ui.components.DeviceList
-import CustomIconButton
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.ui.graphics.luminance
 import com.app.glassesreader.ui.theme.GlassesReaderTheme
-import com.app.glassesreader.ui.theme.DarkButtonBackground
-import com.app.glassesreader.ui.theme.LightButtonBackground
-import com.rokid.cxr.client.utils.ValueUtil
+import CustomIconButton
 
 /**
- * 设备扫描和连接页面
+ * CXR-L 连接页：检测官方 App → 鉴权拿 token → connect 建链。
+ * （保留原 Activity 名以免改 Manifest；不再以 BLE 扫描为主路径）
  */
 class DeviceScanActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "DeviceScanActivity"
-        // 连接验证延迟时间（给 SDK 时间完成连接）
-        private const val VERIFICATION_DELAY_MS = 1000L
-        // 成功提示显示时间
-        private const val SUCCESS_DELAY_MS = 2000L
+        private const val SUCCESS_DELAY_MS = 1500L
         private const val PREF_APP_SETTINGS = "gr_app_settings"
         private const val KEY_DARK_THEME = "dark_theme"
     }
 
-    private var isScanning by mutableStateOf(false)
-    private var devices by mutableStateOf<List<BluetoothDevice>>(emptyList())
-    private var isConnecting by mutableStateOf(false)
-    private var connectionStatus by mutableStateOf<String?>(null)
-    private var bluetoothHelper: BluetoothHelper? = null
+    private var statusText by mutableStateOf<String?>(null)
+    private var isBusy by mutableStateOf(false)
+    private var requiredAppInstalled by mutableStateOf(false)
+    private var requiredAppName by mutableStateOf("Rokid AI App")
+
     private val connectionManager = CxrConnectionManager.getInstance()
     private lateinit var appPrefs: SharedPreferences
-    
-    // Handler 用于延迟任务，需要在 onDestroy 中清理
+
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val verificationRunnable = Runnable {
-        verifyConnection()
-    }
     private val finishRunnable = Runnable {
         setResult(RESULT_OK)
         finish()
     }
 
-    private val bluetoothEnableLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            if (bluetoothHelper?.isBluetoothEnabled() == true) {
-                startScan()
-            }
+    private val authLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            // AuthorizationHelper 走 startActivityForResult；部分机型会回调到此
+            handleAuthResult(result.resultCode, result.data)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // 读取主题设置
+
         appPrefs = getSharedPreferences(PREF_APP_SETTINGS, Context.MODE_PRIVATE)
-        val systemDarkMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val systemDarkMode =
+            (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
         val isDarkTheme = appPrefs.getBoolean(KEY_DARK_THEME, systemDarkMode)
 
-        // 注册生命周期监听
+        CxrAuthManager.init(this)
+        connectionManager.init(this)
+        refreshRequiredAppState()
+
         lifecycle.addObserver(object : LifecycleEventObserver {
             override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
                 when (event) {
                     Lifecycle.Event.ON_RESUME -> {
-                        checkConnectionStatus()
-                    }
-                    Lifecycle.Event.ON_PAUSE -> {
-                        bluetoothHelper?.stopScan()
+                        refreshRequiredAppState()
+                        if (connectionManager.isConnected()) {
+                            statusText = "已连接（链路就绪）"
+                        }
                     }
                     Lifecycle.Event.ON_DESTROY -> {
-                        // 清理所有延迟任务
-                        mainHandler.removeCallbacks(verificationRunnable)
                         mainHandler.removeCallbacks(finishRunnable)
-                        bluetoothHelper?.release()
-                        bluetoothHelper = null
                     }
-                    else -> {}
+                    else -> Unit
                 }
             }
         })
-
-        initBluetoothHelper()
-        checkConnectionStatus()
 
         setContent {
             GlassesReaderTheme(darkTheme = isDarkTheme) {
@@ -133,18 +116,15 @@ class DeviceScanActivity : ComponentActivity() {
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        DeviceScanScreen(
-                            isScanning = isScanning,
-                            devices = devices,
-                            isConnecting = isConnecting,
-                            connectionStatus = connectionStatus,
+                        CxrLConnectScreen(
+                            requiredAppName = requiredAppName,
+                            requiredAppInstalled = requiredAppInstalled,
+                            isBusy = isBusy,
+                            statusText = statusText,
                             isConnected = connectionManager.isConnected(),
-                            onStartScan = ::startScan,
-                            onStopScan = ::stopScan,
-                            onDeviceSelected = ::connectDevice,
-                            isDeviceConnected = { device ->
-                                bluetoothHelper?.isDeviceConnected(device) ?: false
-                            },
+                            hasToken = CxrAuthManager.hasSavedToken(),
+                            onAuthorizeAndConnect = ::authorizeAndConnect,
+                            onConnectWithSavedToken = ::connectWithSavedToken,
                             onBack = { finish() }
                         )
                     }
@@ -153,278 +133,207 @@ class DeviceScanActivity : ComponentActivity() {
         }
     }
 
-    private fun initBluetoothHelper() {
-        if (bluetoothHelper == null) {
-            bluetoothHelper = BluetoothHelper(this).apply {
-                registerBluetoothStateListener()
-                initStatus.observe(this@DeviceScanActivity) { status ->
-                    isScanning = status == BluetoothHelper.InitStatus.INITING
-                }
-                deviceFound.observe(this@DeviceScanActivity) {
-                    val helper = bluetoothHelper
-                    devices = helper?.getAllDevices() ?: emptyList()
-                }
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == CxrAuthManager.AUTH_REQUEST_CODE) {
+            handleAuthResult(resultCode, data)
+        }
+    }
+
+    private fun refreshRequiredAppState() {
+        requiredAppInstalled = CxrAuthManager.isRequiredAppInstalled(this)
+        requiredAppName = CxrAuthManager.requiredAppLabel(this)
+    }
+
+    private fun authorizeAndConnect() {
+        if (isBusy) return
+        refreshRequiredAppState()
+        if (!requiredAppInstalled) {
+            statusText = "请先安装 $requiredAppName（≥ 1.9.0）"
+            return
+        }
+        if (connectionManager.isConnected()) {
+            statusText = "已连接，无需重复连接"
+            return
+        }
+
+        isBusy = true
+        statusText = "正在请求授权…"
+
+        val handledSync = CxrAuthManager.requestAuthorization(this) { outcome ->
+            runOnUiThread { applyAuthOutcome(outcome) }
+        }
+        if (!handledSync) {
+            // 等待 onActivityResult；保持 isBusy
+            statusText = "请在官方应用中完成授权…"
+        }
+    }
+
+    private fun handleAuthResult(resultCode: Int, data: Intent?) {
+        val outcome = CxrAuthManager.handleActivityResult(resultCode, data)
+        applyAuthOutcome(outcome)
+    }
+
+    private fun applyAuthOutcome(outcome: CxrAuthManager.AuthOutcome) {
+        when (outcome) {
+            is CxrAuthManager.AuthOutcome.Success -> {
+                statusText = "授权成功，正在连接眼镜…"
+                connectWithToken(outcome.token)
+            }
+            is CxrAuthManager.AuthOutcome.Failed -> {
+                isBusy = false
+                statusText = "授权失败：${outcome.message}"
+            }
+            CxrAuthManager.AuthOutcome.Cancelled -> {
+                isBusy = false
+                statusText = "已取消授权"
+            }
+            CxrAuthManager.AuthOutcome.Pending -> {
+                // ignore
             }
         }
     }
 
-    private fun startScan() {
-        // 检查是否已连接
-        val alreadyConnected = connectionManager.isConnected()
-        if (alreadyConnected) {
-            Log.d(TAG, "Already connected, skip scan")
-            connectionStatus = "已连接，无需扫描"
+    private fun connectWithSavedToken() {
+        val token = CxrAuthManager.getSavedToken()
+        if (token.isNullOrBlank()) {
+            statusText = "尚无本地 token，请先授权"
             return
         }
-
-        val helper = bluetoothHelper ?: return
-
-        if (!helper.isBluetoothEnabled()) {
-            helper.requestBluetoothEnable(bluetoothEnableLauncher)
-            return
-        }
-
-        helper.startScan()
-        Log.d(TAG, "Bluetooth scan started")
+        isBusy = true
+        statusText = "正在使用已保存凭证连接…"
+        connectWithToken(token)
     }
 
-    private fun stopScan() {
-        bluetoothHelper?.stopScan()
-        isScanning = false
-        Log.d(TAG, "Bluetooth scan stopped")
-    }
-
-    private fun connectDevice(device: BluetoothDevice) {
-        Log.d(TAG, "=== Attempting to connect device ===")
-        
-        // 检查是否已连接
-        val alreadyConnected = connectionManager.isConnected()
-        if (alreadyConnected) {
-            Log.d(TAG, "Already connected, skip connection attempt")
-            connectionStatus = "已连接，无需重复连接"
-            return
-        }
-        
-        // 记录设备状态信息（但不阻止连接，因为 BLE 支持多连接）
-        val deviceInfo = bluetoothHelper?.getDeviceInfo(device) ?: "无法获取设备信息"
-        Log.d(TAG, deviceInfo)
-        
-        // 注意：BLE 支持多连接，即使设备已被其他应用连接，我们也可以尝试连接
-        // 如果连接失败，SDK 会返回相应的错误码
-        
-        Log.d(TAG, "Proceeding with connection attempt (BLE supports multiple connections)")
-        Log.d(TAG, "Connecting to device: ${device.name}, address: ${device.address}")
-        
-        stopScan()
-        isConnecting = true
-        connectionStatus = "正在连接..."
-
-        connectionManager.connectDevice(
+    private fun connectWithToken(token: String) {
+        connectionManager.connectWithToken(
             this,
-            device,
+            token,
             object : CxrConnectionManager.ConnectionCallback {
                 override fun onConnected() {
-                    Log.d(TAG, "Device connected successfully")
-                    isConnecting = false
-                    connectionStatus = "连接成功！正在验证..."
-                    
-                    // 延迟验证连接状态，给 SDK 时间完成连接
-                    mainHandler.postDelayed(verificationRunnable, VERIFICATION_DELAY_MS)
+                    Log.d(TAG, "Link ready")
+                    isBusy = false
+                    statusText = "连接成功！正在打开自定义页面…"
+                    CxrCustomViewManager.ensureInitialized()
+                    mainHandler.postDelayed(finishRunnable, SUCCESS_DELAY_MS)
                 }
 
                 override fun onDisconnected() {
-                    Log.d(TAG, "Device disconnected")
-                    isConnecting = false
-                    connectionStatus = "连接断开"
+                    isBusy = false
+                    statusText = "连接已断开"
                 }
 
-                override fun onFailed(errorCode: ValueUtil.CxrBluetoothErrorCode?) {
-                    Log.e(TAG, "Connection failed: $errorCode")
-                    isConnecting = false
-                    // 统一为简洁的连接失败提示，不再区分具体错误码文案
-                    connectionStatus = "连接失败，请重试"
-                }
-
-                override fun onConnectionInfo(
-                    socketUuid: String?,
-                    macAddress: String?,
-                    rokidAccount: String?,
-                    glassesType: Int
-                ) {
-                    Log.d(
-                        TAG,
-                        "Connection info - UUID: $socketUuid, MAC: $macAddress, " +
-                            "Account: $rokidAccount, Type: $glassesType"
-                    )
+                override fun onFailed(message: String?) {
+                    isBusy = false
+                    statusText = "连接失败：${message ?: "unknown"}"
                 }
             }
         )
     }
-
-    private fun checkConnectionStatus() {
-        val connected = connectionManager.isConnected()
-        connectionStatus = if (connected) "已连接" else null
-        Log.d(TAG, "Connection status: $connected")
-    }
-
-    /**
-     * 验证连接状态并处理后续逻辑
-     */
-    private fun verifyConnection() {
-        val verified = connectionManager.isConnected()
-        if (verified) {
-            connectionStatus = "连接成功并已验证！"
-            Log.d(TAG, "Connection verified successfully")
-            CxrCustomViewManager.ensureInitialized()
-            // 延迟返回主页面，让用户看到成功提示
-            mainHandler.postDelayed(finishRunnable, SUCCESS_DELAY_MS)
-        } else {
-            connectionStatus = "连接成功但验证失败，请重试"
-            Log.w(TAG, "Connection verification failed")
-        }
-    }
-
 }
 
 @Composable
-private fun DeviceScanScreen(
-    isScanning: Boolean,
-    devices: List<BluetoothDevice>,
-    isConnecting: Boolean,
-    connectionStatus: String?,
+private fun CxrLConnectScreen(
+    requiredAppName: String,
+    requiredAppInstalled: Boolean,
+    isBusy: Boolean,
+    statusText: String?,
     isConnected: Boolean,
-    onStartScan: () -> Unit,
-    onStopScan: () -> Unit,
-    onDeviceSelected: (BluetoothDevice) -> Unit,
-    isDeviceConnected: (BluetoothDevice) -> Boolean,
+    hasToken: Boolean,
+    onAuthorizeAndConnect: () -> Unit,
+    onConnectWithSavedToken: () -> Unit,
     onBack: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // 与主页/设置页保持统一的内容内边距（顶部留白由 Scaffold 处理）
             .padding(horizontal = 20.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.Start
     ) {
-        // 顶部返回按钮 + 标题，风格与设置页统一
         Row(
-            modifier = Modifier
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.Start,
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             CustomIconButton(
                 onClick = onBack,
                 size = 56.dp,
-                containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-                    DarkButtonBackground
-                } else {
-                    LightButtonBackground
-                },
-                contentColor = MaterialTheme.colorScheme.onSurface
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
             ) {
                 androidx.compose.material3.Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack,
-                    contentDescription = "返回",
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurface
+                    imageVector = androidx.compose.material.icons.Icons.Filled.ArrowBack,
+                    contentDescription = "返回"
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "设备连接",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 8.dp)
             )
         }
 
-        // 提示信息，使用圆角矩形与浅背景，风格与设置页提示统一
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "蓝牙连接说明",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "如已连接官方应用，请按三次眼镜按钮，完成与系统蓝牙的配对后，再在此页面扫描并选择目标眼镜进行连接。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        Text(
+            text = "CXR-L 需通过 $requiredAppName 鉴权后与眼镜建链。请先确保官方应用已安装，并完成眼镜在官方应用内的配对。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Text(
+            text = if (requiredAppInstalled) {
+                "已检测到 $requiredAppName"
+            } else {
+                "未检测到 $requiredAppName，请先安装"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (requiredAppInstalled) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.error
             }
+        )
+
+        Text(
+            text = when {
+                isConnected -> "状态：已连接"
+                hasToken -> "状态：已有本地授权，可直接连接"
+                else -> "状态：未授权"
+            },
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        if (isBusy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        if (isConnected) {
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Text(
-                    text = "智能眼镜：已连接",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        if (connectionStatus != null) {
+        statusText?.let {
             Text(
-                text = connectionStatus,
+                text = it,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (connectionStatus.startsWith("连接失败") || connectionStatus.contains("断开")) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.primary
-                }
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (!isConnected) {
+        Button(
+            onClick = onAuthorizeAndConnect,
+            enabled = !isBusy && requiredAppInstalled && !isConnected,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (hasToken) "重新授权并连接" else "授权并连接")
+        }
+
+        if (hasToken && !isConnected) {
             Button(
-                onClick = if (isScanning) onStopScan else onStartScan,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isConnecting
+                onClick = onConnectWithSavedToken,
+                enabled = !isBusy,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (isScanning) "停止扫描" else "开始扫描")
+                Text("使用已保存授权连接")
             }
         }
-
-        if (devices.isNotEmpty()) {
-            Text(
-                text = "选择要连接的设备",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.fillMaxWidth()
-            )
-            DeviceList(
-                devices = devices,
-                isLoading = isScanning,
-                onDeviceSelected = onDeviceSelected,
-                isDeviceConnected = isDeviceConnected,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            )
-        } else if (isScanning) {
-            Text(
-                text = "正在扫描设备...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
     }
 }
-

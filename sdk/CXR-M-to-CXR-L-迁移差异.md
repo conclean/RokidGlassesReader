@@ -157,26 +157,57 @@ GlassesReader 若继续做「眼镜拍照 + Wi-Fi 同步媒体」，需在 CXR-L
 
 ---
 
-## 6. 项目侧改造清单（预估）
+## 6. 项目侧改造清单（按模块分步）
 
-针对当前工程结构，升级时大致需要：
+> **原则**：一次只改一个模块；每步可编译、可验证。  
+> **AR 截图/录屏**：**暂不迁移、不删除**——若本 App 可与官方 App 同开，官方侧截图或可覆盖需求；等真机验证后再决定去留。
+
+### 6.1 建议改造顺序
+
+| 步骤 | 模块 | 目标 | 关键文件 | 优先级 |
+| --- | --- | --- | --- | --- |
+| **S0** | Gradle / 依赖 | `client-m` → `client-l:1.0.4`；minSdk 29→31 | `app/build.gradle.kts`、`settings.gradle.kts` | ✅ 已完成（依赖可解析；旧 API 待后续模块改，暂不能完整编译） |
+| **S1** | 鉴权 | 检测 Rokid AI App / Hi Rokid；授权拿 token | **新建** `sdk/` 鉴权封装；权限/设置引导 UI | ✅ `CxrAuthManager` + 连接页授权 |
+| **S2** | 连接与会话 | 用 `CXRLink` + `connect(token)` 替代直连蓝牙；链路就绪门控 | `CxrConnectionManager.kt`；`BluetoothHelper.kt`（降级）；`DeviceScanActivity.kt`；`MainActivity` 自动重连 | ✅ CXRLink CUSTOMVIEW；扫描页改为鉴权连接 |
+| **S3** | CustomView 投屏 | `customViewOpen/Update/Close`；等链路就绪再建会话 | `CxrCustomViewManager.kt`；`TextOverlayService` / 显示设置调用方 | ✅ 已切 CXR-L API |
+| **S4** | 亮度等设备控制 | `CXRLink.setGlassBrightness` 等 | `MainActivity`、`TextPresetManager`、显示控制组件 | ✅ 亮度已切；重启眼镜暂缓 |
+| **S5** | 文案 / 引导 UX | 「断开官方 App」→「安装并授权官方 App」 | `SettingsScreen`、连接页、README/已知限制 | 🔄 设置页文案已改，其余可继续打磨 |
+| **S6** | 权限清单裁剪 | 按新主路径补 INTERNET/鉴权相关；蓝牙扫描权限可后置裁剪 | `AndroidManifest.xml`、运行时权限 | 建议 |
+| **—** | AR 截图 / 录屏 / Wi‑Fi P2P | **先不动、不删**；入口可先藏或保留但标明未迁 | 见 §6.3 | ✅ 入口 stub；原文归档 `legacy/ArCxrMMainActivity.snippet.txt` |
+
+### 6.2 各模块对照（现状 → CXR-L）
 
 | 模块 | 现状（CXR-M） | 升级方向（CXR-L） |
 | --- | --- | --- |
-| Gradle | `client-m:1.0.1-…` | 改为 `client-l:1.0.4`；评估 **minSdk ≥ 31** |
-| `CxrConnectionManager` | `initBluetooth` / `connectBluetooth` / UUID·MAC 持久化 | 重写为：鉴权 + `CXRLink.connect(token)` + 链路回调门控 |
-| `BluetoothHelper` | 主连接入口扫描 | 降级或移除；连接 UX 改为「官方 App + 授权」 |
-| `CxrCustomViewManager` | `CxrApi.open/update/closeCustomView` | 改为 `CXRLink.customViewOpen/Update/Close`，在链路就绪后调用 |
-| 权限引导页 | 悬浮窗 / 无障碍 / 蓝牙 / 通知 | **新增**：检测 Rokid AI App、引导安装、发起授权 |
-| 已知限制文案 | 「须断开官方 App」 | **改为**：「须安装并保持官方 App 可用，完成本 App 授权」 |
-| 拍照 / Wi-Fi / 录屏 | `CxrApi` + WifiP2P + sync | 与 CXR-L 能力矩阵对齐后单独评估，避免盲目迁移 |
+| Gradle | `com.rokid.cxr:client-m:…` | ✅ 已改为 `com.rokid.cxr:client-l:1.0.4`；**minSdk = 31** |
+| 鉴权 | 无 | `AuthorizationHelper` 拿 token；官方 App ≥ 1.9.0 |
+| `CxrConnectionManager` | `initBluetooth` / `connectBluetooth` / UUID·MAC 持久化 | 鉴权 + `CXRLink.connect(token)` + `onCXRLConnected`∧`onGlassBtConnected` |
+| `BluetoothHelper` | 主连接入口扫描 | 主路径不再依赖；可保留代码但退出主流程 |
+| `CxrCustomViewManager` | `CxrApi.open/update/closeCustomView` | `CXRLink.customViewOpen/Update/Close`；链路就绪后再 open |
+| 亮度 | `CxrApi.setGlassBrightness` | `CXRLink.setGlassBrightness`；链路就绪即可 |
+| 权限引导 | 悬浮窗 / 无障碍 / 蓝牙 / 通知 | **新增**检测官方 App + 授权 |
+| 文案 | 「须断开官方 App」 | 「须安装并保持官方 App，完成本 App 授权」 |
 
-**不变部分（可保留）**：
+**本阶段明确不动（非 SDK 或可复用）**：
 
-- 无障碍 `ScreenTextService` 文本采集
+- 无障碍文本采集（`ScreenTextService` 等）
 - 悬浮窗 / FAB 服务控制
-- 文本处理选项、字体大小、显示预设等业务逻辑
-- CustomView 布局 JSON 组装思路（控件类型与 update 协议基本兼容）
+- 文本处理选项、字号、预设等业务逻辑（仅改底层 SDK 调用）
+- CustomView 布局 JSON 组装思路
+
+### 6.3 AR 截图 / 录屏（暂缓，保留代码）
+
+**决策（2026-08-21）**：升级 CXR-L 主路径时 **不迁移、不删除** AR 相关实现；待验证「与官方 App 并存时官方能否截当前画面」后再定。
+
+涉及范围（仅作索引，改造期跳过）：
+
+| 层级 | 主要位置 | 旧 API / 行为 |
+| --- | --- | --- |
+| 编排 | `MainActivity` 中 Wi‑Fi P2P、拍照、录屏、媒体同步 | `initWifiP2P` / `takeGlassPhoto` / `controlScene(VIDEO_RECORD)` / sync |
+| 悬浮窗 | `TextOverlayService` AR 倒计时、录屏快门 | 与 CustomView 有交叉，改 S3 时保留方法签名即可 |
+| 周边 | `recording/*`、叠图/导出工具、AR 广播 | 本地处理为主 |
+
+> 注意：换成 `client-l` 后，这些旧 API 可能**编译失败**。处理方式优先：**用 `#` 注释 / 独立门面暂时 stub / 或把 AR 入口从 UI 藏起且相关调用包在未引用模块**——仍以「不删业务代码」为原则，具体在 S0 依赖切换时再定最小编译策略。
 
 ---
 

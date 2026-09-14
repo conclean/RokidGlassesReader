@@ -3,8 +3,9 @@ package com.app.glassesreader.data
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.app.glassesreader.GlassesReaderApp
+import com.app.glassesreader.sdk.CxrConnectionManager
 import com.app.glassesreader.sdk.CxrCustomViewManager
-import com.rokid.cxr.client.extend.CxrApi
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -243,10 +244,11 @@ class TextPresetManager private constructor(context: Context) {
         // 应用字体大小
         CxrCustomViewManager.setTextSize(preset.textSize)
         
-        // 应用亮度（如果眼镜已连接）
+        // 应用亮度（如果眼镜链路就绪）
         try {
-            if (CxrApi.getInstance().isBluetoothConnected()) {
-                CxrApi.getInstance().setGlassBrightness(preset.brightness)
+            if (CxrConnectionManager.getInstance().isLinkReady()) {
+                val ok = GlassesReaderApp.sharedLink?.setGlassBrightness(preset.brightness)
+                Log.d(TAG, "setGlassBrightness result: $ok")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set brightness", e)

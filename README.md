@@ -73,13 +73,13 @@ GlassesReader 是一款基于 Kotlin 与 Jetpack Compose 构建的 Android 工�
 - **开发语言**：Kotlin
 - **UI 框架**：Jetpack Compose + Material Design 3
 - **架构模式**：MVVM（Model-View-ViewModel）
-- **最低 SDK**：API 29 (Android 10)
+- **最低 SDK**：API 31 (Android 12+)（v2 / CXR-L；1.x 曾为 API 29）
 - **目标 SDK**：API 35 (Android 15)
 
 ### 主要依赖
 
-- [Rokid CXR-M SDK](https://developer.rokid.com/)（当前线上）：`com.rokid.cxr:client-m`，本 App 直连蓝牙 + CustomView
-- [Rokid CXR-L SDK](./sdk/CXR%20L%20SDK/)（升级目标，文档已入库）：`com.rokid.cxr:client-l:1.0.4`，经官方 App 鉴权建链
+- [Rokid CXR-L SDK](./sdk/CXR%20L%20SDK/)（v2 开发中）：`com.rokid.cxr:client-l:1.0.4`，经官方 App 鉴权建链
+- [Rokid CXR-M SDK](https://developer.rokid.com/)（1.x / `main` 冻结）：`com.rokid.cxr:client-m`，本 App 直连蓝牙
 - [EasyFloat](https://github.com/princekin-f/EasyFloat)：悬浮窗管理
 - Jetpack Compose：声明式 UI 框架
 - Retrofit + OkHttp：网络请求（用于未来功能扩展）
@@ -129,7 +129,7 @@ app/src/main/java/com/app/glassesreader/
 
 - Android Studio Hedgehog (2023.1.1) 或更高版本
 - JDK 8 或更高版本
-- Android SDK API 29-35
+- Android SDK API 31-35（v2 / CXR-L）
 
 ### 构建步骤
 
@@ -143,7 +143,7 @@ cd GlassesReader
 
 3. 同步 Gradle 依赖
 
-4. 连接 Android 设备或启动模拟器（需要 Android 10+）
+4. 连接 Android 设备或启动模拟器（需要 Android 12+）
 
 5. 运行项目
 
@@ -235,7 +235,8 @@ cd GlassesReader
 
 1. **必改**：鉴权流程、`CxrConnectionManager`、依赖坐标（`client-m` → `client-l`）、权限引导（检测官方 App）
 2. **可复用**：无障碍采集、悬浮窗/FAB、文本处理、CustomView JSON 布局思路（API 更名：`openCustomView` → `customViewOpen` 等）
-3. **需评估**：`minSdk` 文档要求 31（当前 29）；拍照 / Wi-Fi 同步等旧能力在 CXR-L 文档中形态不同或缺失
+3. **已定**：v2 分支 `minSdk = 31`；拍照 / Wi-Fi 同步等 AR 能力暂缓迁移（保留代码）
+4. **S0 状态**：依赖已切到 `client-l:1.0.4`；旧 CXR-M API 调用尚未改完，**当前无法完整编译**，待 S1–S4
 
 完整对照表、API 映射、状态机与改造清单见：
 
