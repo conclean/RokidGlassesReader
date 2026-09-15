@@ -9,6 +9,8 @@
 
     <!-- CXR-L：经官方 App 鉴权建链；INTERNET 必需 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 网络状态（第三方库可能使用） -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name=".GlassesReaderApp"
