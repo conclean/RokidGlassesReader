@@ -14,25 +14,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import CustomIconButton
-import androidx.compose.material.icons.filled.Check
 import com.app.glassesreader.ui.theme.DarkButtonBackground
 import com.app.glassesreader.ui.theme.LightButtonBackground
 import com.app.glassesreader.ui.components.SimplePermissionItem
@@ -54,12 +52,8 @@ fun SettingsScreen(
     onToggleOverlay: (Boolean) -> Unit,
     onThemeChange: (Boolean) -> Unit,
     onShowMessage: (String) -> Unit,
-    onCheckUpdate: () -> Unit,
-    /** 弹窗确认后执行重启眼镜（CXR-L 暂可能不支持） */
-    onConfirmRebootGlasses: () -> Unit
+    onCheckUpdate: () -> Unit
 ) {
-    var showRebootConfirmDialog by remember { mutableStateOf(false) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -118,8 +112,7 @@ fun SettingsScreen(
         // 设备连接部分
         DeviceConnectionSection(
             uiState = uiState,
-            onOpenDeviceScan = onOpenDeviceScan,
-            onRebootGlassesClick = { showRebootConfirmDialog = true }
+            onOpenDeviceScan = onOpenDeviceScan
         )
 
         // 应用设置部分
@@ -131,29 +124,6 @@ fun SettingsScreen(
             onThemeChange = onThemeChange,
             onShowMessage = onShowMessage,
             onCheckUpdate = onCheckUpdate
-        )
-    }
-
-    if (showRebootConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showRebootConfirmDialog = false },
-            title = { Text("确认重启眼镜") },
-            text = { Text("是否确认重启眼镜？重启后设备将短暂断开连接。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showRebootConfirmDialog = false
-                        onConfirmRebootGlasses()
-                    }
-                ) {
-                    Text("确认")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRebootConfirmDialog = false }) {
-                    Text("取消")
-                }
-            }
         )
     }
 }
@@ -232,8 +202,7 @@ private fun PermissionSetupSection(
 @Composable
 private fun DeviceConnectionSection(
     uiState: com.app.glassesreader.ui.model.MainUiState,
-    onOpenDeviceScan: () -> Unit,
-    onRebootGlassesClick: () -> Unit
+    onOpenDeviceScan: () -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -297,22 +266,6 @@ private fun DeviceConnectionSection(
                     onClick = onOpenDeviceScan,
                     clickEnabled = !uiState.deviceAutoReconnectInProgress
                 )
-                Divider(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f),
-                    thickness = 0.5.dp
-                )
-                TextButton(
-                    onClick = onRebootGlassesClick,
-                    enabled = uiState.glassesConnected,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text("重启眼镜")
-                }
             }
         }
     }
@@ -321,6 +274,7 @@ private fun DeviceConnectionSection(
 /**
  * 应用设置部分
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppSettingsSection(
     uiState: com.app.glassesreader.ui.model.MainUiState,
@@ -344,91 +298,100 @@ private fun AppSettingsSection(
             shape = MaterialTheme.shapes.medium
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
                 val switchEnabled = uiState.overlayGranted && uiState.canToggleReader
                 val disabledMessage = uiState.toggleReasons.joinToString("、").ifBlank { "请完成前置步骤" }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .let {
-                            if (!switchEnabled) {
-                                it.clickable { onShowMessage(disabledMessage) }
-                            } else {
-                                it
-                            }
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // 与 SimplePermissionItem 相同的行高：vertical 18.dp，并去掉 Switch 默认 48dp 最小点击区
+                CompositionLocalProvider(
+                    LocalMinimumInteractiveComponentEnforcement provides false
                 ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .let {
+                                if (!switchEnabled) {
+                                    it.clickable { onShowMessage(disabledMessage) }
+                                } else {
+                                    it
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 18.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "悬浮窗开关",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text(
-                            text = "控制手机端浮窗按钮的显示。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Switch(
+                            checked = uiState.overlayUIEnabled,
+                            onCheckedChange = {
+                                if (switchEnabled) {
+                                    onToggleOverlay(it)
+                                } else {
+                                    onShowMessage(disabledMessage)
+                                }
+                            },
+                            enabled = switchEnabled,
+                            modifier = Modifier.scale(0.85f)
                         )
                     }
-                    Switch(
-                        checked = uiState.overlayUIEnabled,
-                        onCheckedChange = {
-                            if (switchEnabled) {
-                                onToggleOverlay(it)
-                            } else {
-                                onShowMessage(disabledMessage)
-                            }
-                        },
-                        enabled = switchEnabled
-                    )
                 }
                 if (!uiState.overlayGranted) {
                     Text(
                         text = "尚未授权悬浮窗权限，无法显示浮窗。",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
                     )
-                } 
-                
-                // 主题切换开关
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                }
+
+                Divider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f),
+                    thickness = 0.5.dp
+                )
+
+                CompositionLocalProvider(
+                    LocalMinimumInteractiveComponentEnforcement provides false
                 ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 18.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "夜间模式",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text(
-                            text = if (uiState.isDarkTheme) {
-                                "当前为夜间模式（深色主题）"
-                            } else {
-                                "当前为日间模式（浅色主题）"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Switch(
+                            checked = uiState.isDarkTheme,
+                            onCheckedChange = onThemeChange,
+                            modifier = Modifier.scale(0.85f)
                         )
                     }
-                    Switch(
-                        checked = uiState.isDarkTheme,
-                        onCheckedChange = onThemeChange
-                    )
                 }
-                
-                // 版本信息和检查更新
+
+                Divider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f),
+                    thickness = 0.5.dp
+                )
+
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(

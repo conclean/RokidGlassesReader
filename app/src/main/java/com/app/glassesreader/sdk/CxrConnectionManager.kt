@@ -22,6 +22,8 @@ class CxrConnectionManager private constructor() {
     companion object {
         private const val TAG = "CxrConnectionManager"
         private const val DEFAULT_CONNECTION_TIMEOUT_MS = 20_000L
+        /** 自动重连等待链路就绪的上限 */
+        private const val AUTO_RECONNECT_TIMEOUT_MS = 5_000L
 
         @Volatile
         private var INSTANCE: CxrConnectionManager? = null
@@ -61,6 +63,7 @@ class CxrConnectionManager private constructor() {
 
     private var timeoutHandler: Handler? = null
     private var timeoutRunnable: Runnable? = null
+    private var pendingTimeoutMs: Long = DEFAULT_CONNECTION_TIMEOUT_MS
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -131,7 +134,7 @@ class CxrConnectionManager private constructor() {
             Log.e(TAG, "autoReconnect skipped: context null")
             return false
         }
-        connectWithToken(ctx, token, callback)
+        connectWithToken(ctx, token, callback, AUTO_RECONNECT_TIMEOUT_MS)
         return true
     }
 
@@ -141,7 +144,8 @@ class CxrConnectionManager private constructor() {
     fun connectWithToken(
         context: Context,
         token: String,
-        callback: ConnectionCallback? = null
+        callback: ConnectionCallback? = null,
+        timeoutMs: Long = DEFAULT_CONNECTION_TIMEOUT_MS
     ) {
         if (token.isBlank()) {
             callback?.onFailed("empty token")
@@ -162,6 +166,7 @@ class CxrConnectionManager private constructor() {
         isConnecting = true
         cxrlConnected = false
         glassBtConnected = false
+        pendingTimeoutMs = timeoutMs.coerceAtLeast(1_000L)
         CxrAuthManager.saveToken(token)
 
         runCatching {
@@ -233,7 +238,7 @@ class CxrConnectionManager private constructor() {
                 finishConnectingAsFailed("connection timeout")
             }
         }
-        timeoutHandler?.postDelayed(timeoutRunnable!!, DEFAULT_CONNECTION_TIMEOUT_MS)
+        timeoutHandler?.postDelayed(timeoutRunnable!!, pendingTimeoutMs)
     }
 
     private fun cancelTimeout() {

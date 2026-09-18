@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
     private var readerEnabled by mutableStateOf(false)
     private var glassesConnected by mutableStateOf(false)
     private var userDisabledService by mutableStateOf(false)
-    private var overlayUIEnabled by mutableStateOf(false)
+    private var overlayUIEnabled by mutableStateOf(true)
     private var showAutoReconnectFailedDialog by mutableStateOf(false)
     private var isDarkTheme by mutableStateOf(false)
     // 标记用户是否正在主动操作，用于防止在用户开启时误触发自动关闭
@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
         synchronized(MainActivity::class.java) { uiInstance = this }
         appPrefs = getSharedPreferences(PREF_APP_SETTINGS, Context.MODE_PRIVATE)
         appPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
-        overlayUIEnabled = appPrefs.getBoolean(KEY_OVERLAY_ENABLED, false)
+        overlayUIEnabled = appPrefs.getBoolean(KEY_OVERLAY_ENABLED, true)
         userDisabledService = appPrefs.getBoolean(KEY_USER_DISABLED_READER, false)
         readerEnabled = appPrefs.getBoolean(KEY_READER_ENABLED, false)
         glassBrightness = appPrefs.getInt(KEY_LAST_BRIGHTNESS, DEFAULT_BRIGHTNESS)
@@ -241,7 +241,6 @@ class MainActivity : ComponentActivity() {
                         onShowMessage = ::showToast,
                         onBrightnessChange = ::onBrightnessChange,
                         onCheckUpdate = ::checkForUpdate,
-                        onConfirmRebootGlasses = ::requestGlassesReboot,
                         onSettingChanged = {
                             // 实时保存到当前预设
                             if (this::presetManager.isInitialized) {
@@ -429,7 +428,7 @@ class MainActivity : ComponentActivity() {
             showToast("自动重连超时，将打开连接页")
             openDeviceScan()
         }
-        mainHandler.postDelayed(deviceReconnectTimeoutRunnable!!, 45_000L)
+        mainHandler.postDelayed(deviceReconnectTimeoutRunnable!!, 5_000L)
     }
 
     private fun cancelDeviceReconnectTimeout() {
@@ -778,18 +777,6 @@ class MainActivity : ComponentActivity() {
     private fun isActivityDestroyedOrFinishing(): Boolean {
         if (isFinishing) return true
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed
-    }
-
-    /**
-     * 见 [sdk/doc/控制与监听设备状态.md]：`notifyGlassReboot()` 通知眼镜重启。
-     */
-    private fun requestGlassesReboot() {
-        if (!glassesConnected) {
-            showToast("请先连接智能眼镜")
-            return
-        }
-        showToast("当前 CXR-L 暂不支持重启眼镜")
-        Log.w(LOG_TAG, "notifyGlassReboot deferred on CXR-L")
     }
 
     private fun checkForUpdate() {

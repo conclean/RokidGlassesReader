@@ -68,7 +68,6 @@ fun MainScreen(
     onShowMessage: (String) -> Unit,
     onBrightnessChange: (Int) -> Unit,
     onCheckUpdate: () -> Unit,
-    onConfirmRebootGlasses: () -> Unit,
     onSettingChanged: () -> Unit = {}
 ) {
     val navController = rememberNavController()
@@ -120,8 +119,7 @@ fun MainScreen(
                     onToggleOverlay = onOverlaySettingChange,
                     onThemeChange = onThemeChange,
                     onShowMessage = onShowMessage,
-                    onCheckUpdate = onCheckUpdate,
-                    onConfirmRebootGlasses = onConfirmRebootGlasses
+                    onCheckUpdate = onCheckUpdate
                 )
             }
         }

@@ -19,7 +19,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.app.glassesreader.R
 import com.app.glassesreader.accessibility.ScreenTextPublisher
-import com.app.glassesreader.metrics.ReadingSessionTracker
 import com.app.glassesreader.sdk.CxrCustomViewManager
 import com.lzf.easyfloat.EasyFloat
 import com.lzf.easyfloat.enums.ShowPattern
@@ -48,7 +47,7 @@ class TextOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        overlayEnabled = prefs.getBoolean(KEY_OVERLAY_ENABLED, false)
+        overlayEnabled = prefs.getBoolean(KEY_OVERLAY_ENABLED, true)
 
         createNotificationChannel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -116,9 +115,6 @@ class TextOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (isReadingActive) {
-            ReadingSessionTracker.onReadingStopped(this, "service_destroy")
-        }
         textCollectJob?.cancel()
         scope.cancel()
         EasyFloat.dismiss(TOGGLE_FLOAT_TAG, true)
@@ -129,21 +125,14 @@ class TextOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun handleToggleState(isActive: Boolean) {
-        val wasActive = isReadingActive
         isReadingActive = isActive
         updateToggleUi()
         if (isReadingActive) {
-            if (!wasActive) {
-                ReadingSessionTracker.onReadingStarted(this)
-            }
             CxrCustomViewManager.ensureInitialized()
             startCollectingText()
         } else {
             stopCollectingText()
             CxrCustomViewManager.close()
-            if (wasActive) {
-                ReadingSessionTracker.onReadingStopped(this, "toggle_off")
-            }
         }
         updateNotification(isActive = isActive)
         prefs.edit().putBoolean(KEY_READER_ENABLED, isReadingActive).apply()
