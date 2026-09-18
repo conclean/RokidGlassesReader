@@ -48,6 +48,7 @@ import com.app.glassesreader.ui.components.SimplePermissionItem
 import com.app.glassesreader.ui.theme.DarkButtonBackground
 import com.app.glassesreader.ui.theme.GlassesReaderTheme
 import com.app.glassesreader.ui.theme.LightButtonBackground
+import com.app.glassesreader.utils.ConnectionHints
 import CustomIconButton
 
 /**
@@ -191,7 +192,7 @@ class DeviceScanActivity : ComponentActivity() {
             }
             is CxrAuthManager.AuthOutcome.Failed -> {
                 isBusy = false
-                statusText = "授权失败：${outcome.message}"
+                statusText = "授权失败：${outcome.message}\n${ConnectionHints.OPEN_OFFICIAL_APP}"
             }
             CxrAuthManager.AuthOutcome.Cancelled -> {
                 isBusy = false
@@ -231,13 +232,18 @@ class DeviceScanActivity : ComponentActivity() {
                 override fun onDisconnected() {
                     isBusy = false
                     linkConnected = false
-                    statusText = "连接已断开"
+                    statusText = "连接已断开\n${ConnectionHints.ON_CONNECT_FAILED}"
                 }
 
                 override fun onFailed(message: String?) {
                     isBusy = false
                     linkConnected = false
-                    statusText = "连接失败：${message ?: "unknown"}"
+                    val detail = message?.takeIf { it.isNotBlank() }
+                    statusText = if (detail != null) {
+                        "连接失败：$detail\n${ConnectionHints.ON_CONNECT_FAILED}"
+                    } else {
+                        "连接失败\n${ConnectionHints.ON_CONNECT_FAILED}"
+                    }
                 }
             }
         )
@@ -324,7 +330,7 @@ private fun CxrLConnectScreen(
                     verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
                     Text(
-                        text = "需通过官方应用（$requiredAppName ≥ 1.9.0 或 Hi Rokid）授权后连接；请先在官方应用内完成眼镜配对。",
+                        text = "通过官方应用（$requiredAppName / Hi Rokid）授权连接。请先打开官方应用，并确认蓝牙已开。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)

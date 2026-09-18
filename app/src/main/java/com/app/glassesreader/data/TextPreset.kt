@@ -27,7 +27,7 @@ data class TextPreset(
                 id = UUID.randomUUID().toString(),
                 name = "默认配置",
                 brightness = 8,
-                textSize = 18f,
+                textSize = 22f,
                 removeEmptyLines = false,
                 removeLineBreaks = false,
                 removeFirstLine = false,

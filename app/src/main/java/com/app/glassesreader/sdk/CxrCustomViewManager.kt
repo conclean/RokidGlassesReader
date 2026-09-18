@@ -63,7 +63,7 @@ object CxrCustomViewManager {
     private const val KEY_REMOVE_LAST_LINE = "remove_last_line"
     private const val KEY_REMOVE_FIRST_LINE_COUNT = "remove_first_line_count"
     private const val KEY_REMOVE_LAST_LINE_COUNT = "remove_last_line_count"
-    private const val DEFAULT_TEXT_SIZE = 18f // 默认字体大小（sp）
+    private const val DEFAULT_TEXT_SIZE = 22f // 默认字体大小（sp）
     private const val DEFAULT_LINE_COUNT = 1 // 默认删除行数
 
     private var textSize: Float = DEFAULT_TEXT_SIZE

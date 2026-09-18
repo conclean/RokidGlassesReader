@@ -228,7 +228,7 @@ private fun DeviceConnectionSection(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "请先安装并打开官方应用（Rokid AI App ≥ 1.9.0 或 Hi Rokid），完成本应用授权后即可连接。眼镜需已在官方应用内完成配对。",
+                        text = "请打开官方应用（Rokid AI App / Hi Rokid），确认蓝牙已开并完成授权后连接。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.app.glassesreader.update.UpdateResult
+import com.app.glassesreader.utils.ConnectionHints
 
 /**
  * 自动重连失败弹窗
@@ -35,7 +36,7 @@ fun AutoReconnectFailedDialog(
             Text("连接失败")
         },
         text = {
-            Text("自动重连失败，请前往设备连接页面手动连接设备")
+            Text(ConnectionHints.AUTO_RECONNECT_FAILED_DIALOG)
         },
         confirmButton = {
             TextButton(onClick = onNavigateToConnect) {

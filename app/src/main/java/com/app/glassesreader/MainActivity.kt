@@ -157,7 +157,8 @@ class MainActivity : ComponentActivity() {
                 
                 override fun onFailed(message: String?) {
                     Log.d(LOG_TAG, "Auto reconnect failed: $message")
-                    // 自动重连失败，显示弹窗提示用户手动连接
+                    // 自动重连失败：提示打开官方 App + 蓝牙，并引导手动连接
+                    showToast(ConnectionHints.ON_CONNECT_FAILED)
                     showAutoReconnectFailedDialog = true
                     checkConnectionStatus()
                 }
@@ -404,7 +405,7 @@ class MainActivity : ComponentActivity() {
                     cancelDeviceReconnectTimeout()
                     deviceAutoReconnectInProgress = false
                     checkConnectionStatus()
-                    showToast("自动重连失败，将打开连接页")
+                    showToast(ConnectionHints.ON_CONNECT_FAILED)
                     openDeviceScan()
                 }
             }
